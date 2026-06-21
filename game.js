@@ -833,16 +833,25 @@ import { loadSettings, saveSettings, getThemeById, THEMES, DIFFICULTY_PRESETS } 
     togglePause(true);
   });
 
+  function updateMuteButtonUI() {
+    const muteIcon = muteBtn.querySelector('.material-symbols-outlined');
+    if (muteIcon) {
+      muteIcon.textContent = isMuted ? 'volume_off' : 'volume_up';
+    } else {
+      muteBtn.textContent = isMuted ? '🔇' : '🔊';
+    }
+  }
+
   muteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     isMuted = !isMuted;
     appSettings.sound = !isMuted;
     saveSettings(appSettings);
-    muteBtn.textContent = isMuted ? '🔇' : '🔊';
+    updateMuteButtonUI();
     if (!isMuted) ensureAudio();
   });
   // Sync muteBtn icon on load
-  muteBtn.textContent = isMuted ? '🔇' : '🔊';
+  updateMuteButtonUI();
 
   /* ── Settings Panel Logic ─────────────────────────────────── */
   function openSettingsPanel() {
@@ -915,7 +924,7 @@ import { loadSettings, saveSettings, getThemeById, THEMES, DIFFICULTY_PRESETS } 
   document.getElementById('soundToggle')?.addEventListener('change', (e) => {
     appSettings.sound = e.target.checked;
     isMuted = !appSettings.sound;
-    muteBtn.textContent = isMuted ? '🔇' : '🔊';
+    updateMuteButtonUI();
     saveSettings(appSettings);
   });
 

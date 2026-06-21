@@ -1,13 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Cosmic Cargo: Starfall - Premium Sci-Fi Catch Game</title>
   <meta name="description" content="Cosmic Cargo: Starfall — A premium browser game. Catch falling cargo, dodge bombs, unlock karts and survive 10 thrilling levels.">
+  
+  <!-- Font and Icon Imports -->
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@300..700&family=Nunito+Sans:ital,opsz,wght@0,6..12,200..1000;1,6..12,200..1000&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="bg-background overflow-hidden select-none">
+
+  <!-- Interactive Parallax Cosmos Stars (Background behind everything) -->
+  <div id="starContainer" class="parallax-bg"></div>
 
   <div id="gameContainer">
     <!-- Game Canvas -->
@@ -18,9 +24,13 @@
       <!-- Top Left: Score and Combo -->
       <div class="hud-left">
         <div class="hud-box score-box">
-          <span>🪙</span>
-          <span id="scoreVal">0</span>
+          <span class="material-symbols-outlined text-primary text-3xl font-fill">rocket_launch</span>
+          <div class="hud-box-content">
+            <span class="hud-box-lbl">Score</span>
+            <span id="scoreVal">0</span>
+          </div>
         </div>
+        
         <div class="hud-combo-wrap">
           <div id="hudComboBar"></div>
           <span id="hudComboText">1.0x</span>
@@ -42,12 +52,20 @@
 
       <!-- Top Right: Lives and Controls -->
       <div class="hud-right">
-        <div class="hud-box lives-box">
-          <span id="heartsContainer">❤️❤️❤️</span>
+        <!-- Lives Container represented as heavy fuel canister stickers -->
+        <div class="lives-box-container">
+          <div class="lives-label">FUEL</div>
+          <div id="heartsContainer" class="hearts-wrapper">❤️❤️❤️</div>
         </div>
-        <button id="pauseBtn" class="hud-btn" title="Pause">⏸</button>
-        <button id="muteBtn" class="hud-btn" title="Toggle Sound">🔊</button>
-        <button id="settingsGameBtn" class="hud-btn" title="Settings">⚙</button>
+        <button id="pauseBtn" class="hud-btn" title="Pause">
+          <span class="material-symbols-outlined">pause</span>
+        </button>
+        <button id="muteBtn" class="hud-btn" title="Toggle Sound">
+          <span class="material-symbols-outlined">volume_up</span>
+        </button>
+        <button id="settingsGameBtn" class="hud-btn" title="Settings">
+          <span class="material-symbols-outlined">settings</span>
+        </button>
       </div>
 
       <!-- Stacked active powerups (below center HUD) -->
@@ -61,129 +79,198 @@
 
     <!-- Level Up Splash Overlay (Slide In) -->
     <div id="levelUpWrap" class="level-up-banner hidden">
-      <div id="levelUpText">LEVEL UP!</div>
+      <div id="levelUpText" class="title">LEVEL UP!</div>
       <div id="levelUpSub">Entering: Daylight Docks</div>
     </div>
 
     <!-- Start Menu Screen -->
     <div id="startScreen" class="screen">
-      <div class="title-wrap">
-        <h1 class="title">Cosmic Cargo</h1>
-        <p class="subtitle">
-          Master the galactic orbits. Capture cargo containers and avoid core cores to survive.
-        </p>
+      <!-- Top Bar: Settings gear and currencies -->
+      <header class="start-header w-full flex justify-between items-start">
+        <button id="settingsOpenBtn" class="settings-fab active:scale-95" title="Settings">
+          <span class="material-symbols-outlined text-3xl">settings</span>
+        </button>
+        <div class="currency-group">
+          <div class="currency-badge shadow-sm">
+            <span class="material-symbols-outlined text-accent-yellow font-fill">monetization_on</span>
+            <span class="badge-val">1,250</span>
+          </div>
+          <div class="currency-badge shadow-sm">
+            <span class="material-symbols-outlined text-primary font-fill">diamond</span>
+            <span class="badge-val">42</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Center Logo & Play Group -->
+      <div class="start-center flex flex-col items-center">
+        <div class="logo-wrap animate-float sticker-shadow">
+          <div class="logo-card bg-surface ink-outline rounded-3xl transform -rotate-2 relative overflow-hidden">
+            <h1 class="logo-text">COSMIC<br>CARGO</h1>
+            <!-- Rocket sticker offset -->
+            <div class="rocket-sticker bg-tertiary ink-outline rounded-full p-2 animate-bounce-slow">
+              <span class="material-symbols-outlined text-on-tertiary text-3xl font-fill">rocket_launch</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="high-score-tag neo-shadow">
+          SYSTEM RECORD: <span id="startHighScore">0</span>
+        </div>
+
+        <div class="menu-btn-group">
+          <!-- Big Chunky Play Button -->
+          <button class="btn btn-primary" id="playBtn">
+            <span>PLAY</span>
+            <div class="gloss-bar"></div>
+          </button>
+        </div>
       </div>
 
-      <div class="high-score-tag">
-        SYSTEM RECORD: <span id="startHighScore">0</span>
-      </div>
+      <!-- Bottom Row: Daily Reward & Vessel Select Preview -->
+      <footer class="start-footer w-full flex justify-between items-end">
+        <div class="relative group cursor-pointer animate-bounce-slow" id="howToPlayBtn">
+          <div class="gift-box bg-surface ink-outline rounded-2xl p-4 shadow-sm hover:bg-surface-container-high transition-colors">
+            <span class="material-symbols-outlined text-accent-yellow text-4xl font-fill">featured_seasonal_and_gifts</span>
+          </div>
+          <div class="gift-badge bg-error ink-outline rounded-full text-xs font-black shadow-sm">1</div>
+        </div>
 
-      <div class="menu-btn-group">
-        <button class="btn" id="playBtn">▶ ENTER CARGO BAY</button>
-        <button class="btn secondary" id="howToPlayBtn">💡 HOW TO PLAY</button>
-        <button class="btn secondary" id="settingsOpenBtn">⚙ SETTINGS</button>
-      </div>
+        <!-- Ship Preview Sticker Card -->
+        <div class="vessel-sticker transform rotate-6 hover:rotate-0 transition-transform cursor-pointer" onclick="document.getElementById('playBtn').click()">
+          <div class="bg-surface ink-outline rounded-3xl p-2 shadow-md">
+            <div class="vessel-preview bg-primary-container/20 rounded-2xl flex items-center justify-center">
+              <span class="material-symbols-outlined text-primary text-5xl font-fill">rocket_launch</span>
+            </div>
+            <div class="vessel-label font-bold text-center text-xs mt-1">TAP TO EQUIP</div>
+          </div>
+        </div>
+      </footer>
     </div>
 
-    <!-- How to Play Overlay Modal -->
+    <!-- How to Play Overlay Modal (Mission Briefing) -->
     <div id="howToPlayModal" class="screen hidden" style="z-index: 25;">
-      <div class="modal-card">
-        <h2>MISSION BRIEFING</h2>
+      <div class="modal-card ink-outline">
+        <div class="modal-header">
+          <span class="material-symbols-outlined text-accent-yellow font-fill text-3xl">info</span>
+          <h2>MISSION BRIEFING</h2>
+        </div>
+        
         <div class="modal-body">
-          <p><strong>OBJECTIVE:</strong> Capture falling cargo crates to reach level gates. Game ends if you lose all hearts.</p>
+          <p class="objective-text"><strong>OBJECTIVE:</strong> Capture falling cargo crates to reach level gates. Game ends if you lose all hearts.</p>
           
-          <div class="legend-compact">
-            <div class="legend-item"><span class="swatch" style="background:#ffd34d;"></span> Wood Crate (+10 Score)</div>
-            <div class="legend-item"><span class="swatch" style="background:#ffb834;"></span> Gold Crate (+50 Score, Rare)</div>
+          <div class="legend-grid">
+            <div class="legend-item"><span class="swatch" style="background:#b58a63;"></span> Wood Crate (+10 Score)</div>
+            <div class="legend-item"><span class="swatch" style="background:#ffd34d;"></span> Gold Crate (+50 Score, Rare)</div>
             <div class="legend-item"><span class="swatch" style="background:#ff4d6e;"></span> Unstable Core (-1 Heart)</div>
             <div class="legend-item"><span class="swatch" style="background:#2eb6ff;"></span> Magnet Shield (Sucks in cargo)</div>
-            <div class="legend-item"><span class="swatch" style="background:#bf77ff;"></span> Slow-Mo Core (Dilates time)</div>
-            <div class="legend-item"><span class="swatch" style="background:#ffd34d;"></span> Multiplier Core (2x Score)</div>
+            <div class="legend-item"><span class="swatch" style="background:#bf77ff;"></span> Slow-Mo Core (Time dilation)</div>
+            <div class="legend-item"><span class="swatch" style="background:#ffb834;"></span> Multiplier Core (2x Score)</div>
             <div class="legend-item"><span class="swatch" style="background:#2effa3;"></span> Deflector Shield (Absorbs 1 bomb)</div>
           </div>
           
-          <p><strong>CONTROLS:</strong> Move cursor/pointer or swipe screen to track the cargo cart beneath crates. Tap crates directly to smash them in emergencies.</p>
+          <p class="controls-text"><strong>CONTROLS:</strong> Move cursor/pointer or swipe screen to track the cargo cart beneath crates. Tap crates directly to smash them in emergencies.</p>
         </div>
-        <button class="btn" id="closeHowToBtn">UNDERSTOOD</button>
+        <button class="btn btn-secondary ink-outline" id="closeHowToBtn">UNDERSTOOD</button>
       </div>
     </div>
 
-    <!-- Kart Select Screen Overlay -->
+    <!-- Kart Select Screen Overlay (Vessel Select) -->
     <div id="kartSelectScreen" class="screen hidden">
       <div class="title-wrap">
-        <h2 class="title" style="font-size: 2.2rem; background: linear-gradient(135deg, #fff, var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Select Cargo Vessel</h2>
+        <h2 class="title text-primary uppercase">Select Vessel</h2>
         <p class="subtitle">Select your transport vehicle. Better models unlock at higher records.</p>
       </div>
 
       <div class="carousel-container">
-        <button id="prevKartBtn" class="carousel-arrow">◀</button>
-        <div class="carousel-preview-box">
+        <button id="prevKartBtn" class="carousel-arrow ink-outline shadow-sm">◀</button>
+        <div class="carousel-preview-box ink-outline">
           <canvas id="kartPreviewCanvas" width="220" height="110"></canvas>
           <div id="kartLockOverlay" class="lock-overlay hidden">
-            <span class="lock-icon">🔒</span>
+            <span class="lock-icon text-3xl">🔒</span>
             <span id="kartUnlockLabel">REACH RECORD 500+</span>
           </div>
         </div>
-        <button id="nextKartBtn" class="carousel-arrow">▶</button>
+        <button id="nextKartBtn" class="carousel-arrow ink-outline shadow-sm">▶</button>
       </div>
 
-      <div class="kart-info">
+      <div class="kart-info ink-outline bg-surface">
         <h3 id="kartName">Classic Cargo</h3>
         <p id="kartDesc">Balanced starter transport</p>
         
         <div class="stat-meters">
           <div class="stat-row">
             <span class="stat-lbl">CARGO CAPACITY</span>
-            <div class="stat-bar-wrap"><div id="statSize" class="stat-bar"></div></div>
+            <div class="stat-bar-wrap"><div id="statSize" class="stat-bar bg-accent-pink"></div></div>
           </div>
           <div class="stat-row">
             <span class="stat-lbl">HYPER SPEED</span>
-            <div class="stat-bar-wrap"><div id="statSpeed" class="stat-bar"></div></div>
+            <div class="stat-bar-wrap"><div id="statSpeed" class="stat-bar bg-primary"></div></div>
           </div>
           <div class="stat-row">
             <span class="stat-lbl">PULL FORCE</span>
-            <div class="stat-bar-wrap"><div id="statMagnet" class="stat-bar"></div></div>
+            <div class="stat-bar-wrap"><div id="statMagnet" class="stat-bar bg-accent-yellow"></div></div>
           </div>
         </div>
       </div>
 
       <div class="select-btn-group">
-        <button id="backToMenuBtn" class="btn secondary">BACK</button>
-        <button id="selectKartBtn" class="btn">ENGAGE VESSEL</button>
+        <button id="backToMenuBtn" class="btn btn-secondary ink-outline">BACK</button>
+        <button id="selectKartBtn" class="btn btn-primary ink-outline">ENGAGE VESSEL</button>
       </div>
     </div>
 
     <!-- Pause Overlay Screen -->
     <div id="pauseScreen" class="screen hidden" style="z-index: 20;">
-      <h2 class="title" style="font-size: 3rem;">SYSTEM PAUSED</h2>
-      <p class="subtitle">Hyperdrive warp drive stands idle.</p>
-      
-      <div class="pause-btn-group">
-        <button id="resumeBtn" class="btn">RESUME WARP</button>
-        <button id="restartBtn" class="btn secondary">RESTART MISSION</button>
-        <button id="exitBtn" class="btn secondary">ABORT TO HANGAR</button>
+      <div class="pause-card modal-card ink-outline">
+        <div class="modal-header">
+          <span class="material-symbols-outlined text-primary text-4xl">pause_circle</span>
+          <h2>MISSION PAUSED</h2>
+        </div>
+        <p class="subtitle text-center">Hyperdrive warp drive stands idle.</p>
+        
+        <div class="pause-btn-group flex flex-col gap-4 w-full">
+          <button id="resumeBtn" class="btn btn-primary ink-outline">RESUME WARP</button>
+          <button id="restartBtn" class="btn btn-secondary ink-outline">RESTART MISSION</button>
+          <button id="exitBtn" class="btn btn-secondary ink-outline">ABORT TO HANGAR</button>
+        </div>
       </div>
     </div>
 
-    <!-- Game Over Screen -->
+    <!-- Game Over Screen (Cleared Modal styled like Sector Complete) -->
     <div id="gameOverScreen" class="screen hidden">
-      <div id="newBestTag" class="new-best hidden">🏆 NEW SYSTEM RECORD!</div>
-      
-      <div class="score-display">
-        <p class="score-title">Final Cargo Score</p>
-        <div class="score-big" id="finalScore">0</div>
-        <p class="best-row">System Best: <span id="bestScoreVal">0</span></p>
-      </div>
+      <div class="modal-card ink-outline text-ink-navy">
+        <div id="newBestTag" class="new-best shadow-sm">🏆 NEW RECORD!</div>
+        
+        <div class="modal-header justify-center flex-col items-center">
+          <div class="success-icon bg-tertiary ink-outline rounded-full p-4 transform -rotate-12 mb-2">
+            <span class="material-symbols-outlined text-5xl text-on-tertiary font-fill">verified</span>
+          </div>
+          <h2 class="text-3xl text-center uppercase tracking-tight">Sector Complete</h2>
+        </div>
 
-      <div class="game-over-stats">
-        <div class="go-stat-item">Level Reached: <span id="goLevelVal" class="val-gold">Level 1</span></div>
-        <div class="go-stat-item">Vessel Used: <span id="goKartVal" class="val-blue">Classic Cargo</span></div>
-      </div>
+        <div class="score-display text-center my-4">
+          <p class="score-title">Final Cargo Score</p>
+          <div class="score-big" id="finalScore">0</div>
+          <p class="best-row">System Best: <span id="bestScoreVal">0</span></p>
+        </div>
 
-      <div class="game-over-btn-group">
-        <button class="btn" id="replayBtn">↻ RE-ENGAGE MISSION</button>
-        <button class="btn secondary" id="changeKartBtn">🚚 CHANGE VESSEL</button>
-        <button class="btn secondary" id="exitToMenuBtn">🏠 MAIN MENU</button>
+        <div class="game-over-stats bg-surface-container-low border-2 border-inverse-on-surface p-4 rounded-xl flex flex-col gap-2">
+          <div class="go-stat-item flex justify-between">
+            <span class="lbl font-bold">Level Reached:</span>
+            <span id="goLevelVal" class="val-gold">Level 1</span>
+          </div>
+          <div class="go-stat-item flex justify-between">
+            <span class="lbl font-bold">Vessel Used:</span>
+            <span id="goKartVal" class="val-blue">Classic Cargo</span>
+          </div>
+        </div>
+
+        <div class="game-over-btn-group mt-6 flex flex-col gap-3 w-full">
+          <button class="btn btn-primary ink-outline w-full" id="replayBtn">RE-ENGAGE MISSION</button>
+          <button class="btn btn-secondary ink-outline w-full" id="changeKartBtn">CHANGE VESSEL</button>
+          <button class="btn btn-secondary ink-outline w-full" id="exitToMenuBtn">MAIN MENU</button>
+        </div>
       </div>
     </div>
 
@@ -191,7 +278,7 @@
     <div id="settingsBackdrop" class="settings-backdrop"></div>
 
     <!-- ── Settings Side Panel ──────────────────────────────────── -->
-    <div id="settingsPanel" class="settings-panel">
+    <div id="settingsPanel" class="settings-panel ink-outline">
       <div class="settings-header">
         <span class="settings-title">⚙ SETTINGS</span>
         <button id="closeSettingsBtn" class="settings-close-btn" title="Close">✕</button>
@@ -207,7 +294,7 @@
               <span class="row-title">Sound Effects</span>
               <span class="row-sub">Game audio &amp; UI sounds</span>
             </div>
-            <label class="toggle-switch">
+            <label class="toggle-switch ink-outline rounded-full">
               <input type="checkbox" id="soundToggle" checked>
               <span class="toggle-slider"></span>
             </label>
@@ -217,7 +304,7 @@
               <span class="row-title">Vibration</span>
               <span class="row-sub">Haptic feedback on events</span>
             </div>
-            <label class="toggle-switch">
+            <label class="toggle-switch ink-outline rounded-full">
               <input type="checkbox" id="vibrationToggle" checked>
               <span class="toggle-slider"></span>
             </label>
@@ -228,11 +315,11 @@
         <div class="settings-section">
           <div class="section-label">⚔ DIFFICULTY</div>
           <div class="diff-tabs">
-            <button class="diff-tab" data-diff="easy">🌱 Easy</button>
-            <button class="diff-tab active" data-diff="medium">⚡ Medium</button>
-            <button class="diff-tab" data-diff="hard">💀 Hard</button>
+            <button class="diff-tab ink-outline" data-diff="easy">🌱 Easy</button>
+            <button class="diff-tab ink-outline active" data-diff="medium">⚡ Medium</button>
+            <button class="diff-tab ink-outline" data-diff="hard">💀 Hard</button>
           </div>
-          <div class="diff-info-box">
+          <div class="diff-info-box border-2 border-inverse-on-surface">
             <span id="diffDesc">Balanced challenge — the standard Cosmic Cargo experience.</span>
           </div>
         </div>
@@ -254,7 +341,7 @@
               <span class="row-sub" id="settingsHighScore">—</span>
             </div>
           </div>
-          <button class="reset-scores-btn" id="resetScoreBtn">🗑 Reset High Score</button>
+          <button class="reset-scores-btn ink-outline" id="resetScoreBtn">🗑 Reset High Score</button>
         </div>
 
       </div>

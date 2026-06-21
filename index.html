@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Cosmic Cargo: Starfall - Premium Sci-Fi Catch Game</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="gameContainer">
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- In-Game HUD -->
+    <div id="hud" class="hidden">
+      <!-- Top Left: Score and Combo -->
+      <div class="hud-left">
+        <div class="hud-box score-box">
+          <span>🪙</span>
+          <span id="scoreVal">0</span>
+        </div>
+        <div class="hud-combo-wrap">
+          <div id="hudComboBar"></div>
+          <span id="hudComboText">1.0x</span>
+        </div>
+      </div>
+      
+      <!-- Top Center: Level Name, Target, Power-ups -->
+      <div class="hud-center">
+        <div class="hud-box level-box">
+          <span id="levelName">Lvl 1: Sunrise Harbor</span>
+        </div>
+        <div class="hud-box target-box">
+          <span id="targetLabel">Goal: 300</span>
+          <div id="targetBarWrap">
+            <div id="targetBar"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Right: Lives and Controls -->
+      <div class="hud-right">
+        <div class="hud-box lives-box">
+          <span id="heartsContainer">❤️❤️❤️</span>
+        </div>
+        <button id="pauseBtn" class="hud-btn">⏸</button>
+        <button id="muteBtn" class="hud-btn">🔊</button>
+      </div>
+
+      <!-- Stacked active powerups (below center HUD) -->
+      <div id="powerupsHUD" class="powerups-hud-container"></div>
+    </div>
+
+    <!-- Combo Burst Screen Alert -->
+    <div id="comboWrap">
+      <div id="comboText">COMBO x2!</div>
+    </div>
+
+    <!-- Level Up Splash Overlay (Slide In) -->
+    <div id="levelUpWrap" class="level-up-banner hidden">
+      <div id="levelUpText">LEVEL UP!</div>
+      <div id="levelUpSub">Entering: Daylight Docks</div>
+    </div>
+
+    <!-- Start Menu Screen -->
+    <div id="startScreen" class="screen">
+      <div class="title-wrap">
+        <h1 class="title">Cosmic Cargo</h1>
+        <p class="subtitle">
+          Master the galactic orbits. Capture cargo containers and avoid core cores to survive.
+        </p>
+      </div>
+
+      <div class="high-score-tag">
+        SYSTEM RECORD: <span id="startHighScore">0</span>
+      </div>
+
+      <div class="menu-btn-group">
+        <button class="btn" id="playBtn">▶ ENTER CARGO BAY</button>
+        <button class="btn secondary" id="howToPlayBtn">💡 HOW TO PLAY</button>
+      </div>
+    </div>
+
+    <!-- How to Play Overlay Modal -->
+    <div id="howToPlayModal" class="screen hidden" style="z-index: 25;">
+      <div class="modal-card">
+        <h2>MISSION BRIEFING</h2>
+        <div class="modal-body">
+          <p><strong>OBJECTIVE:</strong> Capture falling cargo crates to reach level gates. Game ends if you lose all 3 hearts.</p>
+          
+          <div class="legend-compact">
+            <div class="legend-item"><span class="swatch" style="background:#ffd34d;"></span> Wood Crate (+10 Score)</div>
+            <div class="legend-item"><span class="swatch" style="background:#ffb834;"></span> Gold Crate (+50 Score, Rare)</div>
+            <div class="legend-item"><span class="swatch" style="background:#ff4d6e;"></span> Unstable Core (-1 Heart)</div>
+            <div class="legend-item"><span class="swatch" style="background:#2eb6ff;"></span> Magnet Shield (Sucks in cargo)</div>
+            <div class="legend-item"><span class="swatch" style="background:#bf77ff;"></span> Slow-Mo Core (Dilates time)</div>
+            <div class="legend-item"><span class="swatch" style="background:#ffd34d;"></span> Multiplier Core (2x Score)</div>
+            <div class="legend-item"><span class="swatch" style="background:#2effa3;"></span> Deflector Shield (Absorbs 1 bomb)</div>
+          </div>
+          
+          <p><strong>CONTROLS:</strong> Move cursor/pointer or swipe screen to track the cargo cart beneath crates. You can also tap crates directly to smash them in emergencies.</p>
+        </div>
+        <button class="btn" id="closeHowToBtn">UNDERSTOOD</button>
+      </div>
+    </div>
+
+    <!-- Kart Select Screen Overlay -->
+    <div id="kartSelectScreen" class="screen hidden">
+      <div class="title-wrap">
+        <h2 class="title" style="font-size: 2.2rem; background: linear-gradient(135deg, #fff, var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Select Cargo Vessel</h2>
+        <p class="subtitle">Select your transport vehicle. Better models unlock at higher records.</p>
+      </div>
+
+      <div class="carousel-container">
+        <button id="prevKartBtn" class="carousel-arrow">◀</button>
+        <div class="carousel-preview-box">
+          <canvas id="kartPreviewCanvas" width="220" height="110"></canvas>
+          <div id="kartLockOverlay" class="lock-overlay hidden">
+            <span class="lock-icon">🔒</span>
+            <span id="kartUnlockLabel">REACH RECORD 500+</span>
+          </div>
+        </div>
+        <button id="nextKartBtn" class="carousel-arrow">▶</button>
+      </div>
+
+      <div class="kart-info">
+        <h3 id="kartName">Classic Cargo</h3>
+        <p id="kartDesc">Balanced starter transport</p>
+        
+        <div class="stat-meters">
+          <div class="stat-row">
+            <span class="stat-lbl">CARGO CAPACITY</span>
+            <div class="stat-bar-wrap"><div id="statSize" class="stat-bar"></div></div>
+          </div>
+          <div class="stat-row">
+            <span class="stat-lbl">HYPER SPEED</span>
+            <div class="stat-bar-wrap"><div id="statSpeed" class="stat-bar"></div></div>
+          </div>
+          <div class="stat-row">
+            <span class="stat-lbl">PULL FORCE</span>
+            <div class="stat-bar-wrap"><div id="statMagnet" class="stat-bar"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="select-btn-group">
+        <button id="backToMenuBtn" class="btn secondary">BACK</button>
+        <button id="selectKartBtn" class="btn">ENGAGE VESSEL</button>
+      </div>
+    </div>
+
+    <!-- Pause Overlay Screen -->
+    <div id="pauseScreen" class="screen hidden" style="z-index: 20;">
+      <h2 class="title" style="font-size: 3rem;">SYSTEM PAUSED</h2>
+      <p class="subtitle">Hyperdrive warp drive stands idle.</p>
+      
+      <div class="pause-btn-group">
+        <button id="resumeBtn" class="btn">RESUME WARP</button>
+        <button id="restartBtn" class="btn secondary">RESTART MISSION</button>
+        <button id="exitBtn" class="btn secondary">ABORT TO HANGAR</button>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="screen hidden">
+      <div id="newBestTag" class="new-best hidden">🏆 NEW SYSTEM RECORD!</div>
+      
+      <div class="score-display">
+        <p class="score-title">Final Cargo Score</p>
+        <div class="score-big" id="finalScore">0</div>
+        <p class="best-row">System Best: <span id="bestScoreVal">0</span></p>
+      </div>
+
+      <div class="game-over-stats">
+        <div class="go-stat-item">Level Reached: <span id="goLevelVal" class="val-gold">Level 1</span></div>
+        <div class="go-stat-item">Vessel Used: <span id="goKartVal" class="val-blue">Classic Cargo</span></div>
+      </div>
+
+      <div class="game-over-btn-group">
+        <button class="btn" id="replayBtn">↻ RE-ENGAGE MISSION</button>
+        <button class="btn secondary" id="changeKartBtn">🚚 CHANGE VESSEL</button>
+        <button class="btn secondary" id="exitToMenuBtn">🏠 MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js" type="module"></script>
+</body>
+</html>

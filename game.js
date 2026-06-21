@@ -1,0 +1,1413 @@
+// game.js
+'use strict';
+
+import { loadState, saveHighScore, selectKart, unlockKart } from './storage.js';
+import { LEVELS, getLevelForScore } from './levels.js';
+import { KARTS, getKartById } from './karts.js';
+import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation, updatePowerupsHUD, showLevelUpBanner } from './ui.js';
+
+(() => {
+  /* ===================== SETUP & DOM ===================== */
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const hud = document.getElementById('hud');
+  const scoreValEl = document.getElementById('scoreVal');
+  const timerBar = document.getElementById('timerBar');
+  const comboText = document.getElementById('comboText');
+
+  const startScreen = document.getElementById('startScreen');
+  const gameOverScreen = document.getElementById('gameOverScreen');
+  const finalScoreEl = document.getElementById('finalScore');
+  const bestScoreValEl = document.getElementById('bestScoreVal');
+  const newBestTag = document.getElementById('newBestTag');
+
+  // Modular DOM references
+  const levelNameEl = document.getElementById('levelName');
+  const targetLabelEl = document.getElementById('targetLabel');
+  const targetBarEl = document.getElementById('targetBar');
+  const heartsContainer = document.getElementById('heartsContainer');
+  const startHighScoreEl = document.getElementById('startHighScore');
+  
+  // Custom overlays
+  const howToPlayModal = document.getElementById('howToPlayModal');
+  const pauseScreen = document.getElementById('pauseScreen');
+  const kartSelectScreen = document.getElementById('kartSelectScreen');
+
+  // Stats overlays in Game Over
+  const goLevelVal = document.getElementById('goLevelVal');
+  const goKartVal = document.getElementById('goKartVal');
+
+  // Button inputs
+  const playBtn = document.getElementById('playBtn');
+  const howToPlayBtn = document.getElementById('howToPlayBtn');
+  const closeHowToBtn = document.getElementById('closeHowToBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const muteBtn = document.getElementById('muteBtn');
+  
+  // Pause buttons
+  const resumeBtn = document.getElementById('resumeBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const exitBtn = document.getElementById('exitBtn');
+
+  // Game over buttons
+  const replayBtn = document.getElementById('replayBtn');
+  const changeKartBtn = document.getElementById('changeKartBtn');
+  const exitToMenuBtn = document.getElementById('exitToMenuBtn');
+
+  // Game configuration
+  const CART_Y_OFFSET = 75; // height of cart from bottom
+  const CART_HEIGHT = 40;
+
+  // Crate definitions: weight dictates probability of spawning
+  const OBJECT_TYPES = {
+    WOOD_CRATE: { weight: 55, color: '#b58a63', border: '#785333', glow: 'rgba(181, 138, 99, 0.3)', radius: 24, score: 10, isCrate: true },
+    GOLD_CRATE: { weight: 8,  color: '#ffd34d', border: '#b38600', glow: 'rgba(255, 211, 77, 0.5)', radius: 24, score: 50, isCrate: true },
+    BOMB:       { weight: 20, color: '#2c3e50', border: '#ff4d6e', glow: 'rgba(255, 77, 110, 0.6)', radius: 24, isBomb: true },
+    MAGNET:     { weight: 6,  color: '#2eb6ff', border: '#007ab3', glow: 'rgba(46, 182, 255, 0.5)', radius: 25, power: 'magnet' },
+    SLOMO:      { weight: 5,  color: '#bf77ff', border: '#7a33b3', glow: 'rgba(191, 119, 255, 0.5)', radius: 25, power: 'slomo' },
+    MULTIPLIER: { weight: 4,  color: '#ffb834', border: '#b36b00', glow: 'rgba(255, 184, 52, 0.5)', radius: 25, power: 'multiplier' },
+    SHIELD:     { weight: 4,  color: '#2effa3', border: '#00b366', glow: 'rgba(46, 255, 163, 0.5)', radius: 25, power: 'shield' }
+  };
+
+  /* ===================== AUDIO ENGINE (WEB AUDIO API) ===================== */
+  let audioCtx = null;
+  let isMuted = false;
+
+  function ensureAudio() {
+    if (isMuted) return;
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }
+
+  function playCoinSound(baseFreq, scaleMultiplier = 1) {
+    if (!audioCtx || isMuted) return;
+    const now = audioCtx.currentTime;
+    const osc1 = audioCtx.createOscillator();
+    const osc2 = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc1.type = 'triangle';
+    osc1.frequency.setValueAtTime(baseFreq * scaleMultiplier, now);
+    osc1.frequency.setValueAtTime(baseFreq * 1.5 * scaleMultiplier, now + 0.08);
+
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(baseFreq * 2.0 * scaleMultiplier, now);
+
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.3);
+    osc2.stop(now + 0.3);
+  }
+
+  function playExplosionSound() {
+    if (!audioCtx || isMuted) return;
+    const duration = 0.45;
+    const bufferSize = audioCtx.sampleRate * duration;
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(700, audioCtx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + duration);
+
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+    noise.connect(filter).connect(gain).connect(audioCtx.destination);
+    noise.start();
+    noise.stop(audioCtx.currentTime + duration);
+
+    const subOsc = audioCtx.createOscillator();
+    const subGain = audioCtx.createGain();
+    subOsc.type = 'sawtooth';
+    subOsc.frequency.setValueAtTime(120, audioCtx.currentTime);
+    subOsc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.3);
+    
+    subGain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    subGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    
+    subOsc.connect(subGain).connect(audioCtx.destination);
+    subOsc.start();
+    subOsc.stop(audioCtx.currentTime + 0.3);
+  }
+
+  function playPowerUpSound() {
+    if (!audioCtx || isMuted) return;
+    const now = audioCtx.currentTime;
+    const notes = [293.66, 369.99, 440.00, 587.33, 739.99]; // D Major scale
+    notes.forEach((freq, idx) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+      
+      gain.gain.setValueAtTime(0.08, now + idx * 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.2);
+      
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(now + idx * 0.06);
+      osc.stop(now + idx * 0.06 + 0.2);
+    });
+  }
+
+  function playGameOverSound() {
+    if (!audioCtx || isMuted) return;
+    const now = audioCtx.currentTime;
+    const notes = [220.00, 261.63, 311.13, 440.00]; // A dim chord
+    notes.forEach(freq => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.linearRampToValueAtTime(freq / 2, now + 0.6);
+      
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.6);
+    });
+  }
+
+  /* ===================== GAME STATE ===================== */
+  let gameState = loadState();
+  
+  let state = 'menu'; // menu | kartSelect | countdown | playing | paused | gameover
+  let score = 0;
+  let lives = 3;
+  
+  let currentLevel = LEVELS[0];
+  let currentBgColors = { start: [0,0,0], mid: [0,0,0], end: [0,0,0] };
+  let levelColorTimer = 0; // used for cycling gradients in level 10
+  
+  let objects = [];
+  let particles = [];
+  let bgParticles = [];
+  
+  let spawnTimer = 0;
+  let spawnInterval = 900;
+  let elapsed = 0;
+  let lastTime = 0;
+  
+  let combo = 0;
+  let comboStreak = 0; // track streak milestones (5, 10, 20)
+  
+  let shake = 0;
+  
+  let countdownVal = 3;
+  let countdownTimer = 0;
+  
+  let cartX = 0;
+  let targetCartX = 0;
+
+  // Powerup timers in milliseconds
+  const powerupTimers = {
+    magnet: 0,
+    slomo: 0,
+    multiplier: 0,
+    shield: false
+  };
+
+  /* ===================== INITIALIZATION ===================== */
+  function resizeCanvas() {
+    const w = Math.min(window.innerWidth, 500);
+    const h = window.innerHeight;
+    canvas.width = w;
+    canvas.height = h;
+    if (state === 'menu' || state === 'kartSelect') {
+      cartX = w / 2;
+      targetCartX = w / 2;
+    }
+  }
+
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // Create background space dust particles
+  function initBackground() {
+    bgParticles = [];
+    for (let i = 0; i < 45; i++) {
+      bgParticles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: 1 + Math.random() * 2,
+        speed: 0.3 + Math.random() * 0.8,
+        opacity: 0.2 + Math.random() * 0.5,
+        twinkleSpeed: 0.01 + Math.random() * 0.02,
+        twinkleDir: Math.random() > 0.5 ? 1 : -1
+      });
+    }
+  }
+  initBackground();
+
+  // Load High Score on Load
+  startHighScoreEl.textContent = gameState.highScore;
+
+  // Initial colors
+  function setBgColors(grad) {
+    const hexToRgb = (hex) => {
+      const bigint = parseInt(hex.slice(1), 16);
+      return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
+    };
+    currentBgColors.start = hexToRgb(grad.start);
+    currentBgColors.mid = hexToRgb(grad.mid);
+    currentBgColors.end = hexToRgb(grad.end);
+  }
+  setBgColors(LEVELS[0].bgGradient);
+
+  /* ===================== DYNAMIC OBJECT & PARTICLE BUILDERS ===================== */
+  function pickRandomType() {
+    const activeTypes = currentLevel.activeTypes;
+    
+    // Sum weights of active level types only
+    let activeWeight = 0;
+    activeTypes.forEach(key => {
+      if (OBJECT_TYPES[key]) {
+        // Adjust bomb ratio based on level
+        if (key === 'BOMB') {
+          activeWeight += (currentLevel.bombRatio * 100);
+        } else {
+          activeWeight += OBJECT_TYPES[key].weight;
+        }
+      }
+    });
+
+    let r = Math.random() * activeWeight;
+    for (const key of activeTypes) {
+      if (OBJECT_TYPES[key]) {
+        const weight = (key === 'BOMB') ? (currentLevel.bombRatio * 100) : OBJECT_TYPES[key].weight;
+        r -= weight;
+        if (r <= 0) return key;
+      }
+    }
+    return 'WOOD_CRATE';
+  }
+
+  function spawnObject() {
+    const typeKey = pickRandomType();
+    const def = OBJECT_TYPES[typeKey];
+    const r = def.radius;
+    const x = r + Math.random() * (canvas.width - r * 2);
+    
+    // Speed maps to elapsed time, levels factor, and slow-mo powerups
+    let baseSpeed = 2.2 + Math.random() * 1.2 + (elapsed / 45) * 1.5;
+    baseSpeed *= currentLevel.speedMult;
+
+    objects.push({
+      typeKey,
+      def,
+      x,
+      y: -r - 15,
+      r,
+      speed: baseSpeed,
+      angle: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.05,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: 0.04 + Math.random() * 0.04
+    });
+  }
+
+  function spawnBurstParticles(x, y, color, count = 16) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 4.5;
+      particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 1.2,
+        life: 1.0,
+        decay: 0.02 + Math.random() * 0.03,
+        size: 3 + Math.random() * 4.5,
+        color,
+        isText: false
+      });
+    }
+  }
+
+  function spawnFloatText(x, y, text, color) {
+    particles.push({
+      x,
+      y,
+      vx: (Math.random() - 0.5) * 0.8,
+      vy: -1.8,
+      life: 1.0,
+      decay: 0.018,
+      size: 20,
+      color,
+      text,
+      isText: true
+    });
+  }
+
+  /* ===================== INPUT HANDLERS ===================== */
+  function getCanvasCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    let cx, cy;
+    if (e.touches && e.touches.length) {
+      cx = e.touches[0].clientX;
+      cy = e.touches[0].clientY;
+    } else {
+      cx = e.clientX;
+      cy = e.clientY;
+    }
+    return {
+      x: (cx - rect.left) * (canvas.width / rect.width),
+      y: (cy - rect.top) * (canvas.height / rect.height)
+    };
+  }
+
+  function handleAction(px, py) {
+    if (state !== 'playing') return;
+    ensureAudio();
+    
+    // Fetch selected kart details
+    const kart = getKartById(gameState.selectedKart);
+    
+    // Snappier pointer speed response for Speedster
+    const trackingSpeed = (kart.id === 'speedster') ? 0.28 : 0.16;
+    targetCartX = px;
+    cartX += (targetCartX - cartX) * trackingSpeed * kart.speedMultiplier;
+
+    let hit = false;
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const o = objects[i];
+      const dx = px - o.x;
+      const dy = py - o.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      // Tap margin
+      if (dist <= o.r + 25) {
+        hit = true;
+        collectObject(o, i, true);
+        break;
+      }
+    }
+
+    if (!hit) {
+      particles.push({
+        x: px,
+        y: py,
+        vx: 0,
+        vy: 0,
+        life: 0.4,
+        decay: 0.08,
+        size: 5,
+        color: 'rgba(255, 255, 255, 0.4)',
+        isText: false
+      });
+    }
+  }
+
+  function updateCartPosition(px) {
+    if (state === 'playing') {
+      const kart = getKartById(gameState.selectedKart);
+      const limit = kart.width / 2;
+      targetCartX = Math.max(limit, Math.min(canvas.width - limit, px));
+    }
+  }
+
+  // Pointer Listeners
+  canvas.addEventListener('mousedown', e => {
+    const p = getCanvasCoords(e);
+    handleAction(p.x, p.y);
+  });
+  canvas.addEventListener('mousemove', e => {
+    const p = getCanvasCoords(e);
+    updateCartPosition(p.x);
+  });
+
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const p = getCanvasCoords(e);
+    handleAction(p.x, p.y);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const p = getCanvasCoords(e);
+    updateCartPosition(p.x);
+  }, { passive: false });
+
+  // Escape key for Pause
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (state === 'playing') {
+        togglePause(true);
+      } else if (state === 'paused') {
+        togglePause(false);
+      }
+    }
+  });
+
+  /* ===================== COLLECT / SMASH RESOLUTION ===================== */
+  function collectObject(o, index, isDirectTap = false) {
+    objects.splice(index, 1);
+    ensureAudio();
+
+    const kart = getKartById(gameState.selectedKart);
+
+    if (o.def.isBomb) {
+      // Shield deflector logic
+      if (powerupTimers.shield) {
+        powerupTimers.shield = false;
+        shake = 8;
+        playCoinSound(900);
+        spawnBurstParticles(o.x, o.y, '#2effa3', 18);
+        spawnFloatText(o.x, o.y, 'DEFLECTED!', '#2effa3');
+      } else {
+        // Bomb hit penalties
+        lives--;
+        combo = 0;
+        shake = 18;
+        playExplosionSound();
+        spawnBurstParticles(o.x, o.y, o.def.border, 24);
+        spawnFloatText(o.x, o.y, '-1 LIFE', o.def.border);
+        updateLivesHUD();
+        
+        if (lives <= 0) {
+          lives = 0;
+          endPlaySession();
+          return;
+        }
+      }
+    } else if (o.def.power) {
+      // Power-up activation
+      playPowerUpSound();
+      shake = 8;
+      spawnBurstParticles(o.x, o.y, o.def.color, 18);
+      
+      if (o.def.power === 'magnet') {
+        powerupTimers.magnet = 5000; // 5 seconds magnet
+        spawnFloatText(o.x, o.y, 'MAGNET SHIELD!', o.def.color);
+      } else if (o.def.power === 'slomo') {
+        powerupTimers.slomo = 4000; // 4 seconds slow-mo
+        spawnFloatText(o.x, o.y, 'SLOW-MO WARP!', o.def.color);
+      } else if (o.def.power === 'multiplier') {
+        powerupTimers.multiplier = 6000; // 6 seconds 2x coin multiplier
+        spawnFloatText(o.x, o.y, '2X MULTIPLIER!', o.def.color);
+      } else if (o.def.power === 'shield') {
+        powerupTimers.shield = true;
+        spawnFloatText(o.x, o.y, 'DEFLECTOR ACTIVE!', o.def.color);
+      }
+    } else {
+      // Coin/Crate Collection
+      combo++;
+      
+      // Streak calculations: 1.0x -> 1.2x (at 5) -> 1.5x (at 10) -> 2.0x (at 20)
+      let comboMultiplier = 1.0;
+      if (combo >= 20) {
+        comboMultiplier = 2.0;
+        if (combo === 20) triggerComboMilestone(20);
+      } else if (combo >= 10) {
+        comboMultiplier = 1.5;
+        if (combo === 10) triggerComboMilestone(10);
+      } else if (combo >= 5) {
+        comboMultiplier = 1.2;
+        if (combo === 5) triggerComboMilestone(5);
+      }
+
+      // Check selected kart ability multiplier (Neon Drift has +5% permanent score mult)
+      const driftMult = (kart.id === 'drift') ? 1.05 : 1.0;
+
+      // Active score multiplier powerup
+      const activeMult = (powerupTimers.multiplier > 0) ? 2 : 1;
+
+      const finalVal = Math.round(o.def.score * comboMultiplier * activeMult * driftMult);
+      score += finalVal;
+      
+      shake = Math.min(shake + 1.5, 6);
+      spawnBurstParticles(o.x, o.y, o.def.color, 12);
+      spawnFloatText(o.x, o.y, `+${finalVal}`, o.def.color);
+      
+      if (combo >= 2) {
+        showComboIndicator(comboMultiplier);
+        playCoinSound(650, 1 + Math.min(combo * 0.03, 0.6));
+      } else {
+        playCoinSound(780);
+      }
+    }
+
+    updateScoreUI();
+    checkLevelUp();
+    updateLevelHUD();
+  }
+
+  function triggerComboMilestone(milestone) {
+    shake = 10;
+    playCoinSound(880, 1.4);
+    
+    // Milestones arpeggio chord
+    const now = audioCtx.currentTime;
+    if (audioCtx && !isMuted) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1046.50, now); // C6
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(now + 0.25);
+    }
+    
+    comboText.textContent = `MILESTONE STREAK x${milestone}!`;
+    comboText.classList.add('active');
+    setTimeout(() => {
+      comboText.classList.remove('active');
+    }, 800);
+  }
+
+  function showComboIndicator(mult) {
+    const comboEl = document.getElementById('comboText');
+    if (!comboEl) return;
+    comboEl.textContent = `COMBO STREAK x${mult}!`;
+    comboEl.classList.add('active');
+    clearTimeout(showComboIndicator.timer);
+    showComboIndicator.timer = setTimeout(() => {
+      comboEl.classList.remove('active');
+    }, 600);
+  }
+
+  function updateScoreUI() {
+    scoreValEl.textContent = score;
+    
+    // Dynamic Combo Bar hud progress calculation
+    const comboBar = document.getElementById('hudComboBar');
+    const comboTextEl = document.getElementById('hudComboText');
+    if (comboBar && comboTextEl) {
+      let pct = 0;
+      let label = '1.0x';
+      if (combo < 5) {
+        pct = (combo / 5) * 100;
+        label = '1.0x';
+      } else if (combo < 10) {
+        pct = ((combo - 5) / 5) * 100;
+        label = '1.2x';
+      } else if (combo < 20) {
+        pct = ((combo - 10) / 10) * 100;
+        label = '1.5x';
+      } else {
+        pct = 100;
+        label = '2.0x';
+      }
+      comboBar.style.width = `${pct}%`;
+      comboTextEl.textContent = label;
+    }
+  }
+
+  function updateLivesHUD() {
+    heartsContainer.textContent = '❤️'.repeat(lives) + '🖤'.repeat(3 - lives);
+  }
+
+  /* ===================== LEVEL SYSTEM OPERATIONS ===================== */
+  function updateLevelHUD() {
+    levelNameEl.textContent = `Lvl ${currentLevel.level}: ${currentLevel.name}`;
+    
+    // LEVELS is 0-indexed, level numbers start at 1. Max level is LEVELS.length (10).
+    if (currentLevel.level >= LEVELS.length) {
+      targetLabelEl.textContent = 'Goal: Survive!';
+      targetBarEl.style.width = '100%';
+    } else {
+      // currentLevel.level is 1-based, so index into LEVELS at [currentLevel.level] gives the NEXT level
+      const nextLevelConfig = LEVELS[currentLevel.level];
+      if (!nextLevelConfig) {
+        targetLabelEl.textContent = 'Goal: Survive!';
+        targetBarEl.style.width = '100%';
+        return;
+      }
+      const prevTarget = currentLevel.scoreGate;
+      const nextTarget = nextLevelConfig.scoreGate;
+      const levelScore = score - prevTarget;
+      const levelTotal = nextTarget - prevTarget;
+      
+      targetLabelEl.textContent = `Goal: ${nextTarget}`;
+      const pct = Math.max(0, Math.min(100, (levelScore / levelTotal) * 100));
+      targetBarEl.style.width = `${pct}%`;
+    }
+  }
+
+  function checkLevelUp() {
+    const nextLvl = getLevelForScore(score);
+    if (nextLvl.level > currentLevel.level) {
+      currentLevel = nextLvl;
+      
+      // Trigger level-up banner slide-in
+      showLevelUpBanner(currentLevel.level, currentLevel.name);
+      
+      // Visual flare
+      playPowerUpSound();
+      shake = 16;
+      spawnLevelUpParticles();
+      
+      // Dynamic level check unlocks!
+      checkKartUnlockCriteria();
+    }
+  }
+
+  function checkKartUnlockCriteria() {
+    // We check high score unlock gates on kart selections or gameplay over, but doing it in real-time is great
+    let unlockedAny = false;
+    KARTS.forEach(k => {
+      if (score >= k.unlockScore) {
+        const added = unlockKart(k.id);
+        if (added) unlockedAny = true;
+      }
+    });
+    if (unlockedAny) {
+      gameState = loadState(); // reload state
+    }
+  }
+
+  function spawnLevelUpParticles() {
+    const colors = ['#ffd34d', '#2effa3', '#bf77ff', '#2eb6ff', '#ff4d6e'];
+    for (let f = 0; f < 3; f++) {
+      const rx = canvas.width * 0.2 + Math.random() * canvas.width * 0.6;
+      const ry = canvas.height * 0.3 + Math.random() * canvas.height * 0.4;
+      const col = colors[f % colors.length];
+      spawnBurstParticles(rx, ry, col, 24);
+    }
+  }
+
+  /* ===================== GAME FLOW STATES ===================== */
+  function openKartSelect() {
+    state = 'kartSelect';
+    startScreen.classList.add('hidden');
+    kartSelectScreen.classList.remove('hidden');
+    
+    // Update high scores on Select
+    gameState = loadState();
+    resetCarouselIndex();
+    updateCarouselDisplay(gameState.unlockedKarts, gameState.highScore);
+  }
+
+  function selectAndStartGame(kartId) {
+    selectKart(kartId);
+    gameState = loadState(); // reload selection
+    
+    kartSelectScreen.classList.add('hidden');
+    stopPreviewAnimation();
+    
+    startNewGame();
+  }
+
+  function startNewGame() {
+    ensureAudio();
+    score = 0;
+    lives = 3;
+    currentLevel = LEVELS[0];
+    
+    // Reset background color values
+    setBgColors(LEVELS[0].bgGradient);
+
+    objects = [];
+    particles = [];
+    combo = 0;
+    elapsed = 0;
+
+    // Reset cart positioning to center of canvas
+    cartX = canvas.width / 2;
+    targetCartX = canvas.width / 2;
+    
+    // Reset active powerup timers
+    powerupTimers.magnet = 0;
+    powerupTimers.slomo = 0;
+    powerupTimers.multiplier = 0;
+    powerupTimers.shield = false;
+
+    spawnInterval = currentLevel.spawnInterval;
+    
+    updateScoreUI();
+    updateLevelHUD();
+    updateLivesHUD();
+    
+    startScreen.classList.add('hidden');
+    gameOverScreen.classList.add('hidden');
+    hud.classList.remove('hidden');
+
+    state = 'countdown';
+    countdownVal = 3;
+    countdownTimer = 0;
+  }
+
+  function endPlaySession() {
+    state = 'gameover';
+    hud.classList.add('hidden');
+    playGameOverSound();
+
+    // Check unlocks & persist score
+    const newBest = saveHighScore(score);
+    checkKartUnlockCriteria(); // unlocks based on high score
+    
+    gameState = loadState(); // refresh state
+
+    finalScoreEl.textContent = score;
+    bestScoreValEl.textContent = gameState.highScore;
+    
+    if (newBest) {
+      newBestTag.classList.remove('hidden');
+    } else {
+      newBestTag.classList.add('hidden');
+    }
+    
+    // Set game stats details
+    goLevelVal.textContent = `Level ${currentLevel.level} (${currentLevel.name})`;
+    const usedKart = getKartById(gameState.selectedKart);
+    goKartVal.textContent = usedKart.name;
+
+    gameOverScreen.classList.remove('hidden');
+  }
+
+  function togglePause(paused) {
+    if (paused) {
+      state = 'paused';
+      pauseScreen.classList.remove('hidden');
+    } else {
+      state = 'playing';
+      pauseScreen.classList.add('hidden');
+    }
+  }
+
+  /* ===================== CONTROL ACTIONS & BUTTON LISTENERS ===================== */
+  playBtn.addEventListener('click', () => {
+    openKartSelect();
+  });
+
+  howToPlayBtn.addEventListener('click', () => {
+    howToPlayModal.classList.remove('hidden');
+  });
+
+  closeHowToBtn.addEventListener('click', () => {
+    howToPlayModal.classList.add('hidden');
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    togglePause(true);
+  });
+
+  muteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isMuted = !isMuted;
+    if (isMuted) {
+      muteBtn.textContent = '🔇';
+    } else {
+      muteBtn.textContent = '🔊';
+      ensureAudio();
+    }
+  });
+
+  // Pause menu actions
+  resumeBtn.addEventListener('click', () => {
+    togglePause(false);
+  });
+
+  restartBtn.addEventListener('click', () => {
+    pauseScreen.classList.add('hidden');
+    startNewGame();
+  });
+
+  exitBtn.addEventListener('click', () => {
+    pauseScreen.classList.add('hidden');
+    hud.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+    state = 'menu';
+    startHighScoreEl.textContent = gameState.highScore;
+  });
+
+  // Game over menu actions
+  replayBtn.addEventListener('click', () => {
+    startNewGame();
+  });
+
+  changeKartBtn.addEventListener('click', () => {
+    gameOverScreen.classList.add('hidden');
+    openKartSelect();
+  });
+
+  exitToMenuBtn.addEventListener('click', () => {
+    gameOverScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+    state = 'menu';
+    startHighScoreEl.textContent = gameState.highScore;
+  });
+
+  // Register selection callbacks in UI module
+  initUI(
+    (kartId) => selectAndStartGame(kartId), // selection callback
+    () => { // back callback
+      kartSelectScreen.classList.add('hidden');
+      stopPreviewAnimation();
+      startScreen.classList.remove('hidden');
+      state = 'menu';
+    }
+  );
+
+  /* ===================== PHYSICS & UPDATES ===================== */
+  function lerp(start, end, amt) {
+    return start.map((s, i) => s + (end[i] - s) * amt);
+  }
+
+  function updatePhysics(dt) {
+    if (state === 'paused') return;
+
+    // Background scrolling based on level
+    bgParticles.forEach(p => {
+      // Speed multiplier scaling
+      let scrollMult = 1.0 + (currentLevel.level * 0.15);
+      
+      // Powerup effect on weather scroll
+      if (powerupTimers.slomo > 0) scrollMult *= 0.5;
+
+      if (currentLevel.particleType === 'rain') {
+        p.y += p.speed * scrollMult * 2.8; // fast vertical drops
+      } else if (currentLevel.particleType === 'embers') {
+        p.y -= p.speed * scrollMult * 0.7; // embers drift upwards
+        p.x += Math.sin(p.y / 20) * 0.4;
+      } else if (currentLevel.particleType === 'stars') {
+        // Twinkling stars
+        p.opacity += p.twinkleSpeed * p.twinkleDir;
+        if (p.opacity >= 0.95 || p.opacity <= 0.15) {
+          p.twinkleDir *= -1;
+        }
+        p.y += p.speed * scrollMult * 0.2;
+      } else {
+        p.y += p.speed * scrollMult;
+      }
+
+      if (p.y > canvas.height) {
+        p.y = -5;
+        p.x = Math.random() * canvas.width;
+      } else if (p.y < -5) {
+        p.y = canvas.height + 5;
+        p.x = Math.random() * canvas.width;
+      }
+    });
+
+    if (state === 'countdown') {
+      countdownTimer += dt;
+      if (countdownTimer >= 750) {
+        countdownTimer = 0;
+        countdownVal--;
+        if (countdownVal > 0) {
+          playCoinSound(400, 1.2);
+        } else {
+          playCoinSound(600, 2.0);
+          state = 'playing';
+        }
+      }
+      return;
+    }
+
+    if (state !== 'playing') return;
+
+    elapsed += dt / 1000;
+
+    // Decrement powerups
+    if (powerupTimers.magnet > 0) powerupTimers.magnet = Math.max(0, powerupTimers.magnet - dt);
+    if (powerupTimers.slomo > 0) powerupTimers.slomo = Math.max(0, powerupTimers.slomo - dt);
+    if (powerupTimers.multiplier > 0) powerupTimers.multiplier = Math.max(0, powerupTimers.multiplier - dt);
+
+    // Call UI power-up ring updates
+    const activeHUDList = [];
+    if (powerupTimers.magnet > 0) {
+      activeHUDList.push({ type: 'magnet', timeRemaining: powerupTimers.magnet / 1000, duration: 5.0, icon: '🧲', color: '#2eb6ff' });
+    }
+    if (powerupTimers.slomo > 0) {
+      activeHUDList.push({ type: 'slomo', timeRemaining: powerupTimers.slomo / 1000, duration: 4.0, icon: '⏳', color: '#bf77ff' });
+    }
+    if (powerupTimers.multiplier > 0) {
+      activeHUDList.push({ type: 'multiplier', timeRemaining: powerupTimers.multiplier / 1000, duration: 6.0, icon: '✨', color: '#ffd34d' });
+    }
+    if (powerupTimers.shield) {
+      activeHUDList.push({ type: 'shield', timeRemaining: 1.0, duration: 1.0, icon: '🛡️', color: '#2effa3' });
+    }
+    updatePowerupsHUD(activeHUDList);
+
+    // Dynamic background color interpolation
+    let targetGrad = currentLevel.bgGradient;
+    
+    // Level 10 cycles background gradient colors actively
+    if (currentLevel.level === 10) {
+      levelColorTimer += dt * 0.0006;
+      const hue1 = Math.round(levelColorTimer * 50) % 360;
+      const hue2 = (hue1 + 120) % 360;
+      targetGrad = {
+        start: `hsl(${hue1}, 55%, 25%)`,
+        mid: `hsl(${hue2}, 45%, 15%)`,
+        end: '#020105'
+      };
+      
+      // HSL parser helper to HSL format
+      const hslToRgb = (h, s, l) => {
+        s /= 100;
+        l /= 100;
+        const k = n => (n + h / 30) % 12;
+        const a = s * Math.min(l, 1 - l);
+        const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+        return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
+      };
+      
+      currentBgColors.start = lerp(currentBgColors.start, hslToRgb(hue1, 55, 25), 0.04);
+      currentBgColors.mid = lerp(currentBgColors.mid, hslToRgb(hue2, 45, 15), 0.04);
+      currentBgColors.end = lerp(currentBgColors.end, [10, 5, 20], 0.04);
+    } else {
+      const hexToRgb = (hex) => {
+        const bigint = parseInt(hex.slice(1), 16);
+        return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
+      };
+      
+      currentBgColors.start = lerp(currentBgColors.start, hexToRgb(targetGrad.start), 0.06);
+      currentBgColors.mid = lerp(currentBgColors.mid, hexToRgb(targetGrad.mid), 0.06);
+      currentBgColors.end = lerp(currentBgColors.end, hexToRgb(targetGrad.end), 0.06);
+    }
+
+    // Spawn timing curves
+    const baseSpawnInterval = currentLevel.spawnInterval;
+    spawnInterval = Math.max(260, (baseSpawnInterval / currentLevel.spawnMult) - elapsed * 5);
+    
+    // Slow-mo decreases spawn rate comfort
+    if (powerupTimers.slomo > 0) {
+      spawnInterval *= 1.8;
+    }
+
+    spawnTimer += dt;
+    if (spawnTimer >= spawnInterval) {
+      spawnTimer = 0;
+      spawnObject();
+      
+      // Level specific extra spawns
+      if (Math.random() < 0.2 + (currentLevel.level * 0.06)) {
+        spawnObject();
+      }
+    }
+
+    // Autoplay helper for developer testing and agent walkthroughs
+    if (window.autoplayActive) {
+      const nonBombs = objects.filter(o => !o.def.isBomb && o.y > 0);
+      if (nonBombs.length > 0) {
+        const lowest = nonBombs.reduce((lowest, o) => o.y > lowest.y ? o : lowest, nonBombs[0]);
+        targetCartX = lowest.x;
+      }
+    }
+
+    // Selected kart movement configuration
+    const selectedKart = getKartById(gameState.selectedKart);
+    const trackingSpeed = (selectedKart.id === 'speedster') ? 0.28 : 0.16;
+    cartX += (targetCartX - cartX) * trackingSpeed * selectedKart.speedMultiplier;
+
+    // Neon Drift trailing particles ability
+    if (selectedKart.id === 'drift' && Math.random() < 0.45) {
+      particles.push({
+        x: cartX + (Math.random() - 0.5) * selectedKart.width * 0.7,
+        y: canvas.height - CART_Y_OFFSET + 24,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: 1 + Math.random() * 2,
+        life: 0.8,
+        decay: 0.03 + Math.random() * 0.02,
+        size: 2.5 + Math.random() * 3.5,
+        color: 'rgba(191, 119, 255, 0.75)',
+        isText: false
+      });
+    }
+
+    // Update cargo crates physics
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const o = objects[i];
+      o.angle += o.rotationSpeed;
+      o.wobble += o.wobbleSpeed;
+
+      // Slow-mo powerup speed damping
+      let currentFallSpeed = o.speed;
+      if (powerupTimers.slomo > 0) {
+        currentFallSpeed *= 0.5;
+      }
+
+      // Magnet properties (active shield powerup OR passive Magnet Kart skill)
+      const hasMagnetSkill = (selectedKart.id === 'magnet');
+      const pullRadius = hasMagnetSkill ? 150 : 0;
+      const isMagnetActive = (powerupTimers.magnet > 0);
+      
+      if ((isMagnetActive || hasMagnetSkill) && !o.def.isBomb) {
+        const dx = cartX - o.x;
+        const dy = (canvas.height - CART_Y_OFFSET) - o.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        // Magnet pulls if active globally OR within pull range for Magnet Kart
+        if (isMagnetActive || dist <= pullRadius) {
+          const force = isMagnetActive ? 0.09 : 0.05;
+          o.x += dx * force;
+          o.y += dy * force;
+        } else {
+          o.x += Math.sin(o.wobble) * 0.5;
+          o.y += currentFallSpeed;
+        }
+      } else {
+        o.x += Math.sin(o.wobble) * 0.5;
+        o.y += currentFallSpeed;
+      }
+
+      // Basket collision gates
+      const cartTop = canvas.height - CART_Y_OFFSET;
+      const cartBottom = cartTop + CART_HEIGHT;
+      const cartLeft = cartX - selectedKart.width / 2;
+      const cartRight = cartX + selectedKart.width / 2;
+
+      const collidesWithCart = (
+        o.y + o.r >= cartTop &&
+        o.y - o.r <= cartBottom &&
+        o.x + o.r >= cartLeft &&
+        o.x - o.r <= cartRight
+      );
+
+      if (collidesWithCart) {
+        collectObject(o, i, false);
+        continue;
+      }
+
+      // Out of bounds detection
+      if (o.y - o.r > canvas.height) {
+        // Missed standard cargo crates breaks combo streak
+        if (o.def.isCrate) {
+          combo = 0;
+          updateScoreUI();
+        }
+        objects.splice(i, 1);
+      }
+    }
+
+    // Update Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      
+      if (!p.isText) {
+        p.vy += 0.07;
+      }
+      
+      p.life -= p.decay;
+      if (p.life <= 0) {
+        particles.splice(i, 1);
+      }
+    }
+
+    // Screen Shake decay
+    if (shake > 0.05) {
+      shake *= 0.88;
+    } else {
+      shake = 0;
+    }
+  }
+
+  /* ===================== CANVAS DRAWING ENGINE ===================== */
+  function drawBackground() {
+    const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    const cStart = `rgb(${Math.round(currentBgColors.start[0])}, ${Math.round(currentBgColors.start[1])}, ${Math.round(currentBgColors.start[2])})`;
+    const cMid = `rgb(${Math.round(currentBgColors.mid[0])}, ${Math.round(currentBgColors.mid[1])}, ${Math.round(currentBgColors.mid[2])})`;
+    const cEnd = `rgb(${Math.round(currentBgColors.end[0])}, ${Math.round(currentBgColors.end[1])}, ${Math.round(currentBgColors.end[2])})`;
+
+    g.addColorStop(0, cStart);
+    g.addColorStop(0.5, cMid);
+    g.addColorStop(1, cEnd);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Weather/Particle system per level
+    ctx.fillStyle = currentLevel.particleColor;
+    bgParticles.forEach(p => {
+      ctx.globalAlpha = p.opacity;
+      ctx.beginPath();
+      if (currentLevel.particleType === 'rain') {
+        // Rain strokes
+        ctx.strokeStyle = currentLevel.particleColor;
+        ctx.lineWidth = 1;
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x - 1, p.y + 12);
+        ctx.stroke();
+      } else {
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    ctx.globalAlpha = 1.0;
+
+    // Warning grids base
+    const grad = ctx.createLinearGradient(0, canvas.height - 130, 0, canvas.height);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0.025)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, canvas.height - 130, canvas.width, 130);
+  }
+
+  // Draw procedural cargo blocks matching specifications
+  function drawCrate(o) {
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    ctx.rotate(o.angle);
+
+    ctx.shadowColor = o.def.glow;
+    ctx.shadowBlur = (powerupTimers.slomo > 0) ? 22 : 14;
+
+    const size = o.r * 2.0;
+    const hs = size / 2;
+
+    if (o.typeKey === 'BOMB') {
+      // Hazard styling for core core bombs
+      ctx.fillStyle = '#1e252b';
+      ctx.strokeStyle = '#ff4d6e';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(-hs, -hs, size, size, 5);
+      ctx.fill();
+      ctx.stroke();
+
+      // Hazard caution diagonal stripes
+      ctx.strokeStyle = '#ffd34d';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(-hs + 4, -hs + 12);
+      ctx.lineTo(-hs + 12, -hs + 4);
+      ctx.moveTo(-hs + 4, hs - 4);
+      ctx.lineTo(hs - 4, -hs + 4);
+      ctx.moveTo(hs - 12, hs - 4);
+      ctx.lineTo(hs - 4, hs - 12);
+      ctx.stroke();
+
+      // Pulsing warning energy core center
+      const corePulse = 4 + Math.sin(Date.now() * 0.01) * 2;
+      ctx.shadowColor = '#ff4d6e';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#ff4d6e';
+      ctx.beginPath();
+      ctx.arc(0, 0, corePulse, 0, Math.PI * 2);
+      ctx.fill();
+
+    } else if (o.typeKey === 'GOLD_CRATE') {
+      // Premium metal plates
+      const goldGrad = ctx.createLinearGradient(-hs, -hs, hs, hs);
+      goldGrad.addColorStop(0, '#ffe066');
+      goldGrad.addColorStop(0.5, '#f5b041');
+      goldGrad.addColorStop(1, '#9c6c00');
+      
+      ctx.fillStyle = goldGrad;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(-hs, -hs, size, size, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Inner details
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#b38600';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.rect(-hs + 5, -hs + 5, size - 10, size - 10);
+      ctx.moveTo(-hs + 5, -hs + 5);
+      ctx.lineTo(hs - 5, hs - 5);
+      ctx.stroke();
+
+    } else if (o.typeKey === 'WOOD_CRATE') {
+      // Wood cargo panels
+      ctx.fillStyle = '#875a36';
+      ctx.strokeStyle = '#5c3a21';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(-hs, -hs, size, size, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // Wood grains plank lines
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#a06d42';
+      ctx.beginPath();
+      ctx.roundRect(-hs + 3, -hs + 3, size - 6, size - 6, 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#5c3a21';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      // X bracing
+      ctx.moveTo(-hs + 3, -hs + 3);
+      ctx.lineTo(hs - 3, hs - 3);
+      ctx.moveTo(hs - 3, -hs + 3);
+      ctx.lineTo(-hs + 3, hs - 3);
+      ctx.stroke();
+
+    } else {
+      // Powerup vector cores
+      ctx.fillStyle = '#0e051c';
+      ctx.strokeStyle = o.def.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(-hs, -hs, size, size, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      // Core interior energy drawing
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = o.def.color;
+      ctx.fillStyle = o.def.color;
+      
+      if (o.def.power === 'magnet') {
+        // Draw blue magnet shape
+        ctx.strokeStyle = '#2eb6ff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, 7, Math.PI, 0);
+        ctx.stroke();
+      } else if (o.def.power === 'slomo') {
+        // Hourglass shape
+        ctx.beginPath();
+        ctx.moveTo(-6, -8);
+        ctx.lineTo(6, -8);
+        ctx.lineTo(-6, 8);
+        ctx.lineTo(6, 8);
+        ctx.closePath();
+        ctx.fill();
+      } else if (o.def.power === 'multiplier') {
+        // Glowing cross stars/X
+        ctx.font = '900 16px Outfit, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('2X', 0, 0);
+      } else if (o.def.power === 'shield') {
+        // Cyan Hexagon core
+        ctx.beginPath();
+        for (let s = 0; s < 6; s++) {
+          const sa = (s * Math.PI) / 3;
+          const sx = Math.cos(sa) * 8;
+          const sy = Math.sin(sa) * 8;
+          if (s === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function drawParticles() {
+    particles.forEach(p => {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.life);
+      
+      if (p.isText) {
+        ctx.font = '900 20px Outfit, sans-serif';
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+        ctx.textAlign = 'center';
+        ctx.fillText(p.text, p.x, p.y);
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1.0;
+  }
+
+  function drawCountdownOverlay() {
+    drawBackground();
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    if (countdownVal > 0) {
+      ctx.font = '900 100px Outfit, sans-serif';
+      ctx.fillStyle = '#ffd34d';
+      ctx.shadowColor = 'rgba(255, 211, 77, 0.5)';
+      ctx.shadowBlur = 32;
+      ctx.fillText(countdownVal, 0, 0);
+    } else {
+      ctx.font = '900 75px Outfit, sans-serif';
+      ctx.fillStyle = '#2effa3';
+      ctx.shadowColor = 'rgba(46, 255, 163, 0.6)';
+      ctx.shadowBlur = 32;
+      ctx.fillText('LAUNCH!', 0, 0);
+    }
+    ctx.restore();
+  }
+
+  function drawFrame() {
+    ctx.save();
+    
+    // Process Screen shaking offsets
+    if (shake > 0.5) {
+      const dx = (Math.random() - 0.5) * shake;
+      const dy = (Math.random() - 0.5) * shake;
+      ctx.translate(dx, dy);
+    }
+
+    if (state === 'countdown') {
+      drawCountdownOverlay();
+      ctx.restore();
+      return;
+    }
+
+    // Default play background
+    drawBackground();
+
+    // Render gameplay elements
+    objects.forEach(drawCrate);
+    drawParticles();
+    
+    if (state === 'playing' || state === 'paused') {
+      const selectedKart = getKartById(gameState.selectedKart);
+      
+      // Draw translated active player vehicle
+      ctx.save();
+      ctx.translate(cartX, canvas.height - CART_Y_OFFSET);
+      
+      // Draw custom vector kart graphics
+      selectedKart.draw(ctx, selectedKart.width, CART_HEIGHT);
+      
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  /* ===================== GAME MAIN LOOP ===================== */
+  function mainLoop(ts) {
+    if (!lastTime) lastTime = ts;
+    const dt = Math.min(ts - lastTime, 50); // safety cap
+    lastTime = ts;
+
+    updatePhysics(dt);
+    drawFrame();
+
+    requestAnimationFrame(mainLoop);
+  }
+
+  requestAnimationFrame(mainLoop);
+
+})();

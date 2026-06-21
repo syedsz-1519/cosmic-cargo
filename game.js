@@ -1,10 +1,11 @@
 // game.js
 'use strict';
 
-import { loadState, saveHighScore, selectKart, unlockKart } from './storage.js';
+import { loadState, saveState, saveHighScore, selectKart, unlockKart } from './storage.js';
 import { LEVELS, getLevelForScore } from './levels.js';
 import { KARTS, getKartById } from './karts.js';
 import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation, updatePowerupsHUD, showLevelUpBanner } from './ui.js';
+import { loadSettings, saveSettings, getThemeById, THEMES, DIFFICULTY_PRESETS } from './settings.js';
 
 (() => {
   /* ===================== SETUP & DOM ===================== */
@@ -54,6 +55,13 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
   const changeKartBtn = document.getElementById('changeKartBtn');
   const exitToMenuBtn = document.getElementById('exitToMenuBtn');
 
+  // Settings panel refs
+  const settingsPanel = document.getElementById('settingsPanel');
+  const settingsBackdrop = document.getElementById('settingsBackdrop');
+  const settingsOpenBtn = document.getElementById('settingsOpenBtn');
+  const settingsGameBtn = document.getElementById('settingsGameBtn');
+  const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+
   // Game configuration
   const CART_Y_OFFSET = 75; // height of cart from bottom
   const CART_HEIGHT = 40;
@@ -72,6 +80,13 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
   /* ===================== AUDIO ENGINE (WEB AUDIO API) ===================== */
   let audioCtx = null;
   let isMuted = false;
+  let appSettings = loadSettings();
+  isMuted = !appSettings.sound; // sync mute state from persisted settings
+  let wasPlayingBeforeSettings = false;
+  // Theme special-effect timers
+  let bhAngle = 0;
+  let sunTime = 0;
+  let nebulaTime = 0;
 
   function ensureAudio() {
     if (isMuted) return;
@@ -81,6 +96,11 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
+  }
+
+  function vibrate(pattern) {
+    if (!appSettings.vibration) return;
+    if (navigator.vibrate) navigator.vibrate(pattern);
   }
 
   function playCoinSound(baseFreq, scaleMultiplier = 1) {
@@ -280,14 +300,15 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
   /* ===================== DYNAMIC OBJECT & PARTICLE BUILDERS ===================== */
   function pickRandomType() {
     const activeTypes = currentLevel.activeTypes;
+    const diffPreset = DIFFICULTY_PRESETS[appSettings.difficulty] || DIFFICULTY_PRESETS.medium;
     
     // Sum weights of active level types only
     let activeWeight = 0;
     activeTypes.forEach(key => {
       if (OBJECT_TYPES[key]) {
-        // Adjust bomb ratio based on level
+        // Adjust bomb ratio based on level + difficulty
         if (key === 'BOMB') {
-          activeWeight += (currentLevel.bombRatio * 100);
+          activeWeight += (currentLevel.bombRatio * diffPreset.bombRatioMult * 100);
         } else {
           activeWeight += OBJECT_TYPES[key].weight;
         }
@@ -297,7 +318,7 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
     let r = Math.random() * activeWeight;
     for (const key of activeTypes) {
       if (OBJECT_TYPES[key]) {
-        const weight = (key === 'BOMB') ? (currentLevel.bombRatio * 100) : OBJECT_TYPES[key].weight;
+        const weight = (key === 'BOMB') ? (currentLevel.bombRatio * diffPreset.bombRatioMult * 100) : OBJECT_TYPES[key].weight;
         r -= weight;
         if (r <= 0) return key;
       }
@@ -312,8 +333,9 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
     const x = r + Math.random() * (canvas.width - r * 2);
     
     // Speed maps to elapsed time, levels factor, and slow-mo powerups
+    const diffPreset = DIFFICULTY_PRESETS[appSettings.difficulty] || DIFFICULTY_PRESETS.medium;
     let baseSpeed = 2.2 + Math.random() * 1.2 + (elapsed / 45) * 1.5;
-    baseSpeed *= currentLevel.speedMult;
+    baseSpeed *= currentLevel.speedMult * diffPreset.speedMult;
 
     objects.push({
       typeKey,
@@ -482,6 +504,7 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
         combo = 0;
         shake = 18;
         playExplosionSound();
+        vibrate([35, 12, 35]);
         spawnBurstParticles(o.x, o.y, o.def.border, 24);
         spawnFloatText(o.x, o.y, '-1 LIFE', o.def.border);
         updateLivesHUD();
@@ -495,6 +518,7 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
     } else if (o.def.power) {
       // Power-up activation
       playPowerUpSound();
+      vibrate([15, 5, 15]);
       shake = 8;
       spawnBurstParticles(o.x, o.y, o.def.color, 18);
       
@@ -538,6 +562,7 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
       score += finalVal;
       
       shake = Math.min(shake + 1.5, 6);
+      vibrate(8);
       spawnBurstParticles(o.x, o.y, o.def.color, 12);
       spawnFloatText(o.x, o.y, `+${finalVal}`, o.def.color);
       
@@ -618,7 +643,8 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
   }
 
   function updateLivesHUD() {
-    heartsContainer.textContent = '❤️'.repeat(lives) + '🖤'.repeat(3 - lives);
+    const maxLives = (DIFFICULTY_PRESETS[appSettings.difficulty] || DIFFICULTY_PRESETS.medium).startingLives;
+    heartsContainer.textContent = '❤️'.repeat(lives) + '🖤'.repeat(Math.max(0, maxLives - lives));
   }
 
   /* ===================== LEVEL SYSTEM OPERATIONS ===================== */
@@ -715,7 +741,8 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
   function startNewGame() {
     ensureAudio();
     score = 0;
-    lives = 3;
+    const diffPreset = DIFFICULTY_PRESETS[appSettings.difficulty] || DIFFICULTY_PRESETS.medium;
+    lives = diffPreset.startingLives;
     currentLevel = LEVELS[0];
     
     // Reset background color values
@@ -809,12 +836,118 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
   muteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     isMuted = !isMuted;
-    if (isMuted) {
-      muteBtn.textContent = '🔇';
-    } else {
-      muteBtn.textContent = '🔊';
-      ensureAudio();
+    appSettings.sound = !isMuted;
+    saveSettings(appSettings);
+    muteBtn.textContent = isMuted ? '🔇' : '🔊';
+    if (!isMuted) ensureAudio();
+  });
+  // Sync muteBtn icon on load
+  muteBtn.textContent = isMuted ? '🔇' : '🔊';
+
+  /* ── Settings Panel Logic ─────────────────────────────────── */
+  function openSettingsPanel() {
+    settingsPanel.classList.add('open');
+    settingsBackdrop.classList.add('visible');
+    if (state === 'playing') {
+      wasPlayingBeforeSettings = true;
+      togglePause(true);
     }
+    syncSettingsUI();
+  }
+
+  function closeSettingsPanel() {
+    settingsPanel.classList.remove('open');
+    settingsBackdrop.classList.remove('visible');
+    if (wasPlayingBeforeSettings && state === 'paused') {
+      togglePause(false);
+      wasPlayingBeforeSettings = false;
+    }
+  }
+
+  function syncSettingsUI() {
+    const soundToggleEl = document.getElementById('soundToggle');
+    const vibToggleEl = document.getElementById('vibrationToggle');
+    if (soundToggleEl) soundToggleEl.checked = appSettings.sound;
+    if (vibToggleEl) vibToggleEl.checked = appSettings.vibration;
+    document.querySelectorAll('.diff-tab').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.diff === appSettings.difficulty);
+    });
+    const preset = DIFFICULTY_PRESETS[appSettings.difficulty];
+    const diffDescEl = document.getElementById('diffDesc');
+    if (diffDescEl && preset) diffDescEl.textContent = preset.desc;
+    buildThemeGrid();
+    const gs = loadState();
+    const hiEl = document.getElementById('settingsHighScore');
+    if (hiEl) hiEl.textContent = gs.highScore.toLocaleString();
+    startHighScoreEl.textContent = gs.highScore;
+  }
+
+  function buildThemeGrid() {
+    const grid = document.getElementById('themeGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    THEMES.forEach(theme => {
+      const card = document.createElement('div');
+      card.className = 'theme-card' + (appSettings.theme === theme.id ? ' active' : '');
+      const previewStyle = theme.gradient
+        ? `background: linear-gradient(135deg, ${theme.gradient.start}, ${theme.gradient.mid})`
+        : 'background: linear-gradient(135deg, #0b0c10, #1f2833)';
+      card.innerHTML = `
+        <div class="theme-preview" style="${previewStyle}"></div>
+        <span class="theme-emoji">${theme.emoji}</span>
+        <span class="theme-name">${theme.name}</span>
+        <span class="theme-desc">${theme.desc}</span>
+      `;
+      card.addEventListener('click', () => {
+        appSettings.theme = theme.id;
+        saveSettings(appSettings);
+        buildThemeGrid();
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  if (settingsOpenBtn) settingsOpenBtn.addEventListener('click', (e) => { e.stopPropagation(); openSettingsPanel(); });
+  if (settingsGameBtn) settingsGameBtn.addEventListener('click', (e) => { e.stopPropagation(); openSettingsPanel(); });
+  if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettingsPanel);
+  if (settingsBackdrop) settingsBackdrop.addEventListener('click', closeSettingsPanel);
+
+  document.getElementById('soundToggle')?.addEventListener('change', (e) => {
+    appSettings.sound = e.target.checked;
+    isMuted = !appSettings.sound;
+    muteBtn.textContent = isMuted ? '🔇' : '🔊';
+    saveSettings(appSettings);
+  });
+
+  document.getElementById('vibrationToggle')?.addEventListener('change', (e) => {
+    appSettings.vibration = e.target.checked;
+    saveSettings(appSettings);
+  });
+
+  document.querySelectorAll('.diff-tab').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      appSettings.difficulty = btn.dataset.diff;
+      saveSettings(appSettings);
+      document.querySelectorAll('.diff-tab').forEach(b => b.classList.toggle('active', b.dataset.diff === appSettings.difficulty));
+      const preset = DIFFICULTY_PRESETS[appSettings.difficulty];
+      const diffDescEl = document.getElementById('diffDesc');
+      if (diffDescEl && preset) diffDescEl.textContent = preset.desc;
+    });
+  });
+
+  document.getElementById('resetScoreBtn')?.addEventListener('click', () => {
+    const gs = loadState();
+    saveState({ ...gs, highScore: 0 });
+    startHighScoreEl.textContent = '0';
+    bestScoreValEl.textContent = '0';
+    const hiEl = document.getElementById('settingsHighScore');
+    if (hiEl) hiEl.textContent = '0';
+  });
+
+  // Auto-pause when tab becomes hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state === 'playing') togglePause(true);
   });
 
   // Pause menu actions
@@ -872,35 +1005,46 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
     if (state === 'paused') return;
 
     // Background scrolling based on level
+    const activeThemeForParticles = getThemeById(appSettings.theme);
+    const effectivePType = activeThemeForParticles.particleType || currentLevel.particleType;
+
     bgParticles.forEach(p => {
-      // Speed multiplier scaling
       let scrollMult = 1.0 + (currentLevel.level * 0.15);
-      
-      // Powerup effect on weather scroll
       if (powerupTimers.slomo > 0) scrollMult *= 0.5;
 
-      if (currentLevel.particleType === 'rain') {
-        p.y += p.speed * scrollMult * 2.8; // fast vertical drops
-      } else if (currentLevel.particleType === 'embers') {
-        p.y -= p.speed * scrollMult * 0.7; // embers drift upwards
+      if (effectivePType === 'rain') {
+        p.y += p.speed * scrollMult * 2.8;
+      } else if (effectivePType === 'embers') {
+        p.y -= p.speed * scrollMult * 0.7;
         p.x += Math.sin(p.y / 20) * 0.4;
-      } else if (currentLevel.particleType === 'stars') {
-        // Twinkling stars
+      } else if (effectivePType === 'stars' || effectivePType === 'moondust') {
         p.opacity += p.twinkleSpeed * p.twinkleDir;
-        if (p.opacity >= 0.95 || p.opacity <= 0.15) {
-          p.twinkleDir *= -1;
+        if (p.opacity >= 0.92 || p.opacity <= 0.10) p.twinkleDir *= -1;
+        p.y += p.speed * scrollMult * (effectivePType === 'moondust' ? 0.14 : 0.20);
+      } else if (effectivePType === 'bubbles') {
+        p.y -= p.speed * scrollMult * 0.72;
+        p.x += Math.sin(p.y / 30) * 0.45;
+        p.opacity = 0.22 + Math.abs(Math.sin(Date.now() * 0.0014 + p.x * 0.05)) * 0.28;
+      } else if (effectivePType === 'orbit') {
+        if (!p.orbitR) {
+          p.orbitR = 38 + Math.random() * Math.min(canvas.width, canvas.height) * 0.42;
+          p.orbitAngle = Math.random() * Math.PI * 2;
+          p.orbitDir = Math.random() < 0.5 ? 1 : -1;
+          p.orbitSpd = 0.0035 + Math.random() * 0.0075;
         }
-        p.y += p.speed * scrollMult * 0.2;
+        p.orbitAngle += p.orbitSpd * p.orbitDir * scrollMult;
+        p.x = canvas.width / 2 + Math.cos(p.orbitAngle) * p.orbitR;
+        p.y = canvas.height / 2 + Math.sin(p.orbitAngle) * p.orbitR * 0.30;
+        p.opacity = 0.12 + (1 - p.orbitR / (Math.min(canvas.width, canvas.height) * 0.45)) * 0.55;
       } else {
         p.y += p.speed * scrollMult;
       }
 
-      if (p.y > canvas.height) {
-        p.y = -5;
-        p.x = Math.random() * canvas.width;
-      } else if (p.y < -5) {
-        p.y = canvas.height + 5;
-        p.x = Math.random() * canvas.width;
+      if (effectivePType === 'bubbles') {
+        if (p.y < -10) { p.y = canvas.height + 5; p.x = Math.random() * canvas.width; }
+      } else if (effectivePType !== 'orbit') {
+        if (p.y > canvas.height) { p.y = -5; p.x = Math.random() * canvas.width; }
+        else if (p.y < -5) { p.y = canvas.height + 5; p.x = Math.random() * canvas.width; }
       }
     });
 
@@ -945,46 +1089,49 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
     updatePowerupsHUD(activeHUDList);
 
     // Dynamic background color interpolation
-    let targetGrad = currentLevel.bgGradient;
-    
-    // Level 10 cycles background gradient colors actively
-    if (currentLevel.level === 10) {
-      levelColorTimer += dt * 0.0006;
-      const hue1 = Math.round(levelColorTimer * 50) % 360;
-      const hue2 = (hue1 + 120) % 360;
-      targetGrad = {
-        start: `hsl(${hue1}, 55%, 25%)`,
-        mid: `hsl(${hue2}, 45%, 15%)`,
-        end: '#020105'
-      };
-      
-      // HSL parser helper to HSL format
-      const hslToRgb = (h, s, l) => {
-        s /= 100;
-        l /= 100;
-        const k = n => (n + h / 30) % 12;
-        const a = s * Math.min(l, 1 - l);
-        const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
-        return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
-      };
-      
-      currentBgColors.start = lerp(currentBgColors.start, hslToRgb(hue1, 55, 25), 0.04);
-      currentBgColors.mid = lerp(currentBgColors.mid, hslToRgb(hue2, 45, 15), 0.04);
-      currentBgColors.end = lerp(currentBgColors.end, [10, 5, 20], 0.04);
+    const hexToRgbLocal = (hex) => {
+      if (!hex || hex[0] !== '#') return [0, 0, 0];
+      const bigint = parseInt(hex.slice(1), 16);
+      return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
+    };
+    const activeBgTheme = getThemeById(appSettings.theme);
+
+    if (activeBgTheme.gradient) {
+      // Theme overrides level background colors — smooth lerp to theme
+      currentBgColors.start = lerp(currentBgColors.start, hexToRgbLocal(activeBgTheme.gradient.start), 0.055);
+      currentBgColors.mid   = lerp(currentBgColors.mid,   hexToRgbLocal(activeBgTheme.gradient.mid),   0.055);
+      currentBgColors.end   = lerp(currentBgColors.end,   hexToRgbLocal(activeBgTheme.gradient.end),   0.055);
     } else {
-      const hexToRgb = (hex) => {
-        const bigint = parseInt(hex.slice(1), 16);
-        return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
-      };
-      
-      currentBgColors.start = lerp(currentBgColors.start, hexToRgb(targetGrad.start), 0.06);
-      currentBgColors.mid = lerp(currentBgColors.mid, hexToRgb(targetGrad.mid), 0.06);
-      currentBgColors.end = lerp(currentBgColors.end, hexToRgb(targetGrad.end), 0.06);
+      // Level-specific bg colors (original logic)
+      let targetGrad = currentLevel.bgGradient;
+
+      if (currentLevel.level === 10) {
+        levelColorTimer += dt * 0.0006;
+        const hue1 = Math.round(levelColorTimer * 50) % 360;
+        const hue2 = (hue1 + 120) % 360;
+        targetGrad = { start: `hsl(${hue1}, 55%, 25%)`, mid: `hsl(${hue2}, 45%, 15%)`, end: '#020105' };
+
+        const hslToRgb = (h, s, l) => {
+          s /= 100; l /= 100;
+          const k = n => (n + h / 30) % 12;
+          const a = s * Math.min(l, 1 - l);
+          const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+          return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
+        };
+        currentBgColors.start = lerp(currentBgColors.start, hslToRgb(hue1, 55, 25), 0.04);
+        currentBgColors.mid   = lerp(currentBgColors.mid,   hslToRgb(hue2, 45, 15), 0.04);
+        currentBgColors.end   = lerp(currentBgColors.end,   [10, 5, 20], 0.04);
+      } else {
+        currentBgColors.start = lerp(currentBgColors.start, hexToRgbLocal(targetGrad.start), 0.06);
+        currentBgColors.mid   = lerp(currentBgColors.mid,   hexToRgbLocal(targetGrad.mid),   0.06);
+        currentBgColors.end   = lerp(currentBgColors.end,   hexToRgbLocal(targetGrad.end),   0.06);
+      }
     }
 
-    // Spawn timing curves
-    const baseSpawnInterval = currentLevel.spawnInterval;
-    spawnInterval = Math.max(260, (baseSpawnInterval / currentLevel.spawnMult) - elapsed * 5);
+    // Spawn timing curves (difficulty-adjusted)
+    const diffPresetSpawn = DIFFICULTY_PRESETS[appSettings.difficulty] || DIFFICULTY_PRESETS.medium;
+    const baseSpawnInterval = currentLevel.spawnInterval * diffPresetSpawn.spawnIntervalMult;
+    spawnInterval = Math.max(200, (baseSpawnInterval / currentLevel.spawnMult) - elapsed * 5);
     
     // Slow-mo decreases spawn rate comfort
     if (powerupTimers.slomo > 0) {
@@ -1120,39 +1267,149 @@ import { initUI, updateCarouselDisplay, resetCarouselIndex, stopPreviewAnimation
     }
   }
 
+  /* ===================== THEME SPECIAL EFFECTS ===================== */
+  function drawBlackHoleEffect() {
+    bhAngle += 0.007;
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const maxR = Math.min(canvas.width, canvas.height) * 0.40;
+    for (let r = maxR; r > 16; r -= 7) {
+      const t = 1 - r / maxR;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r * 1.65, r * 0.42, bhAngle, 0, Math.PI * 2);
+      ctx.strokeStyle = `hsla(${270 + t * 70}, 80%, 62%, ${t * 0.13})`;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+    }
+    const ehG = ctx.createRadialGradient(cx, cy, 0, cx, cy, 52);
+    ehG.addColorStop(0, 'rgba(0,0,0,1)');
+    ehG.addColorStop(0.78, 'rgba(0,0,0,0.92)');
+    ehG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = ehG;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 52, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawSunEffect() {
+    sunTime += 0.012;
+    const cx = canvas.width / 2, cy = -canvas.height * 0.08;
+    for (let i = 0; i < 14; i++) {
+      const angle = (i / 14) * Math.PI * 2 + sunTime * 0.12;
+      const len = canvas.height * 0.65 + Math.sin(sunTime * 2.2 + i * 0.73) * 70;
+      const alpha = 0.032 + Math.abs(Math.sin(sunTime * 1.5 + i)) * 0.018;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len);
+      ctx.strokeStyle = `rgba(255,190,50,${alpha})`;
+      ctx.lineWidth = 22 + Math.sin(sunTime + i) * 8;
+      ctx.stroke();
+    }
+    const sunG = ctx.createRadialGradient(cx, cy, 0, cx, cy, canvas.height * 0.22);
+    sunG.addColorStop(0, 'rgba(255,240,100,0.22)');
+    sunG.addColorStop(0.5, 'rgba(255,140,30,0.08)');
+    sunG.addColorStop(1, 'rgba(255,50,0,0)');
+    ctx.fillStyle = sunG;
+    ctx.beginPath();
+    ctx.arc(cx, cy, canvas.height * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawMoonEffect() {
+    const mlG = ctx.createRadialGradient(canvas.width * 0.88, -20, 0, canvas.width * 0.88, -20, canvas.height * 0.55);
+    mlG.addColorStop(0, 'rgba(180,200,255,0.08)');
+    mlG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mlG;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const craters = [{rx:0.14,ry:0.11,r:26},{rx:0.80,ry:0.19,r:20},{rx:0.46,ry:0.07,r:34},{rx:0.30,ry:0.28,r:14},{rx:0.65,ry:0.14,r:22},{rx:0.90,ry:0.36,r:12}];
+    craters.forEach(c => {
+      const cx = c.rx * canvas.width, cy = c.ry * canvas.height;
+      ctx.beginPath(); ctx.arc(cx, cy, c.r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(130,150,200,0.16)'; ctx.lineWidth = 2; ctx.stroke();
+      const cg = ctx.createRadialGradient(cx - c.r * 0.2, cy - c.r * 0.2, 0, cx, cy, c.r);
+      cg.addColorStop(0, 'rgba(0,0,0,0)'); cg.addColorStop(1, 'rgba(0,0,0,0.12)');
+      ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx, cy, c.r * 0.8, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+
+  function drawNebulaEffect() {
+    nebulaTime += 0.0025;
+    const clouds = [{rx:0.18,ry:0.22,r:130,hue:280,a:0.055},{rx:0.78,ry:0.14,r:95,hue:200,a:0.045},{rx:0.5,ry:0.42,r:160,hue:320,a:0.04},{rx:0.84,ry:0.58,r:85,hue:240,a:0.055},{rx:0.08,ry:0.50,r:100,hue:300,a:0.035}];
+    clouds.forEach((c, i) => {
+      const cx = c.rx * canvas.width + Math.sin(nebulaTime + i) * 18;
+      const cy = c.ry * canvas.height + Math.cos(nebulaTime * 0.72 + i) * 12;
+      const pulse = c.a + Math.sin(nebulaTime * 1.4 + i * 1.3) * 0.016;
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.r);
+      grad.addColorStop(0, `hsla(${c.hue},80%,65%,${pulse * 2.2})`);
+      grad.addColorStop(1, `hsla(${c.hue},70%,40%,0)`);
+      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(cx, cy, c.r, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+
+  function drawNeonCityEffect() {
+    const floor = canvas.height * 0.93;
+    const bldgs = [{x:0.00,w:0.055,h:0.12},{x:0.05,w:0.04,h:0.20},{x:0.08,w:0.065,h:0.15},{x:0.14,w:0.045,h:0.27},{x:0.18,w:0.04,h:0.17},{x:0.21,w:0.075,h:0.22},{x:0.28,w:0.04,h:0.14},{x:0.31,w:0.055,h:0.30},{x:0.36,w:0.048,h:0.18},{x:0.40,w:0.068,h:0.14},{x:0.46,w:0.038,h:0.25},{x:0.49,w:0.055,h:0.36},{x:0.54,w:0.045,h:0.20},{x:0.58,w:0.075,h:0.16},{x:0.65,w:0.038,h:0.28},{x:0.68,w:0.058,h:0.20},{x:0.73,w:0.045,h:0.14},{x:0.77,w:0.065,h:0.23},{x:0.83,w:0.045,h:0.17},{x:0.87,w:0.075,h:0.11},{x:0.94,w:0.06,h:0.19}];
+    ctx.fillStyle = 'rgba(0,4,10,0.82)';
+    bldgs.forEach(b => ctx.fillRect(b.x * canvas.width, floor - b.h * canvas.height, b.w * canvas.width, b.h * canvas.height));
+    bldgs.forEach((b, i) => {
+      ctx.strokeStyle = i % 2 === 0 ? 'rgba(0,240,195,0.25)' : 'rgba(180,80,255,0.22)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(b.x * canvas.width + 0.5, floor - b.h * canvas.height + 0.5, b.w * canvas.width - 1, b.h * canvas.height - 1);
+    });
+    const nG = ctx.createLinearGradient(0, floor - 2, 0, floor - 28);
+    nG.addColorStop(0, 'rgba(0,240,195,0.18)'); nG.addColorStop(1, 'rgba(0,240,195,0)');
+    ctx.fillStyle = nG; ctx.fillRect(0, floor - 28, canvas.width, 28);
+  }
+
   /* ===================== CANVAS DRAWING ENGINE ===================== */
   function drawBackground() {
+    const activeDTheme = getThemeById(appSettings.theme);
+    const effectivePType  = activeDTheme.particleType  || currentLevel.particleType;
+    const effectivePColor = activeDTheme.particleColor || currentLevel.particleColor;
+
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
     const cStart = `rgb(${Math.round(currentBgColors.start[0])}, ${Math.round(currentBgColors.start[1])}, ${Math.round(currentBgColors.start[2])})`;
-    const cMid = `rgb(${Math.round(currentBgColors.mid[0])}, ${Math.round(currentBgColors.mid[1])}, ${Math.round(currentBgColors.mid[2])})`;
-    const cEnd = `rgb(${Math.round(currentBgColors.end[0])}, ${Math.round(currentBgColors.end[1])}, ${Math.round(currentBgColors.end[2])})`;
-
-    g.addColorStop(0, cStart);
-    g.addColorStop(0.5, cMid);
-    g.addColorStop(1, cEnd);
+    const cMid   = `rgb(${Math.round(currentBgColors.mid[0])},   ${Math.round(currentBgColors.mid[1])},   ${Math.round(currentBgColors.mid[2])})`;
+    const cEnd   = `rgb(${Math.round(currentBgColors.end[0])},   ${Math.round(currentBgColors.end[1])},   ${Math.round(currentBgColors.end[2])})`;
+    g.addColorStop(0, cStart); g.addColorStop(0.5, cMid); g.addColorStop(1, cEnd);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Weather/Particle system per level
-    ctx.fillStyle = currentLevel.particleColor;
+    // Theme-specific special effects (drawn behind particles)
+    if      (activeDTheme.special === 'blackhole') drawBlackHoleEffect();
+    else if (activeDTheme.special === 'sun')       drawSunEffect();
+    else if (activeDTheme.special === 'moon')      drawMoonEffect();
+    else if (activeDTheme.special === 'nebula')    drawNebulaEffect();
+    else if (activeDTheme.special === 'neon')      drawNeonCityEffect();
+
+    // Particle system (theme or level-specific type)
     bgParticles.forEach(p => {
       ctx.globalAlpha = p.opacity;
       ctx.beginPath();
-      if (currentLevel.particleType === 'rain') {
-        // Rain strokes
-        ctx.strokeStyle = currentLevel.particleColor;
+      if (effectivePType === 'rain') {
+        ctx.strokeStyle = effectivePColor;
         ctx.lineWidth = 1;
         ctx.moveTo(p.x, p.y);
         ctx.lineTo(p.x - 1, p.y + 12);
         ctx.stroke();
+      } else if (effectivePType === 'bubbles') {
+        ctx.strokeStyle = effectivePColor;
+        ctx.lineWidth = 1.2;
+        ctx.arc(p.x, p.y, p.size * 1.2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = p.opacity * 0.35;
+        ctx.fillStyle = 'rgba(255,255,255,0.28)';
+        ctx.beginPath();
+        ctx.arc(p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.38, 0, Math.PI * 2);
+        ctx.fill();
       } else {
+        ctx.fillStyle = effectivePColor;
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
       }
     });
     ctx.globalAlpha = 1.0;
 
-    // Warning grids base
+    // Bottom zone gradient overlay
     const grad = ctx.createLinearGradient(0, canvas.height - 130, 0, canvas.height);
     grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
     grad.addColorStop(1, 'rgba(255, 255, 255, 0.025)');

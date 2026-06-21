@@ -838,3 +838,367 @@ canvas {
   gap: 14px;
 }
 
+
+/* ═══════════════════════════════════════════════
+   SETTINGS SIDE PANEL
+═══════════════════════════════════════════════ */
+
+/* Backdrop blur overlay */
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 50;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+.settings-backdrop.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Side drawer */
+.settings-panel {
+  position: fixed;
+  top: 0;
+  right: -400px;
+  width: min(385px, 100vw);
+  height: 100%;
+  background: rgba(8, 4, 20, 0.98);
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: -12px 0 60px rgba(0, 0, 0, 0.75);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: right 0.42s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.settings-panel.open {
+  right: 0;
+}
+
+/* Header */
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 22px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.settings-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px var(--gold-glow);
+}
+
+.settings-close-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.settings-close-btn:hover {
+  background: rgba(255, 77, 110, 0.2);
+  border-color: rgba(255, 77, 110, 0.4);
+  color: var(--red);
+  transform: rotate(90deg);
+}
+
+/* Scrollable body */
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0 24px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 211, 77, 0.2) transparent;
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 4px;
+}
+.settings-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 211, 77, 0.2);
+  border-radius: 2px;
+}
+
+/* Section blocks */
+.settings-section {
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+}
+
+.section-label {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+/* Row with toggle */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.row-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 28px;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.3s ease;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: linear-gradient(135deg, #2effa3, #2eb6ff);
+  box-shadow: 0 0 12px rgba(46, 255, 163, 0.35);
+  border-color: transparent;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(24px);
+  background: #fff;
+}
+
+/* Difficulty Tabs */
+.diff-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.diff-tab {
+  flex: 1;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 10px 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.diff-tab:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-main);
+}
+
+.diff-tab.active {
+  background: rgba(255, 211, 77, 0.12);
+  border-color: rgba(255, 211, 77, 0.4);
+  color: var(--gold);
+  box-shadow: 0 0 12px rgba(255, 211, 77, 0.15);
+}
+
+.diff-info-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  min-height: 42px;
+}
+
+/* Theme Grid */
+.theme-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.theme-card {
+  position: relative;
+  border: 2px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 0 0 10px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.18s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.theme-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.theme-card.active {
+  border-color: var(--gold);
+  box-shadow: 0 0 16px rgba(255, 211, 77, 0.25);
+  background: rgba(255, 211, 77, 0.06);
+}
+
+.theme-preview {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px 10px 0 0;
+}
+
+.theme-emoji {
+  font-size: 1.2rem;
+  margin-top: 4px;
+  line-height: 1;
+}
+
+.theme-name {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+  line-height: 1.2;
+  padding: 0 4px;
+}
+
+.theme-desc {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 0 6px;
+  line-height: 1.3;
+  display: none; /* hidden by default, shown on active */
+}
+
+.theme-card.active .theme-desc {
+  display: block;
+}
+
+/* Game Data section */
+.reset-scores-btn {
+  margin-top: 10px;
+  width: 100%;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 10px;
+  background: rgba(255, 77, 110, 0.08);
+  border: 1px solid rgba(255, 77, 110, 0.25);
+  border-radius: 12px;
+  color: var(--red);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+}
+
+.reset-scores-btn:hover {
+  background: rgba(255, 77, 110, 0.18);
+  border-color: rgba(255, 77, 110, 0.5);
+  transform: translateY(-1px);
+}
+
+.reset-scores-btn:active {
+  transform: translateY(1px);
+}
+
+/* Settings FAB on start screen */
+#settingsOpenBtn {
+  font-size: 1rem;
+  letter-spacing: 2px;
+  padding: 14px 40px;
+}
+
+/* Difficulty badge shown in HUD level name */
+.diff-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-left: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  vertical-align: middle;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.diff-badge.easy  { background: rgba(46, 255, 163, 0.15); color: var(--green); }
+.diff-badge.hard  { background: rgba(255, 77, 110, 0.15); color: var(--red); }

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Cosmic Cargo: Starfall - Premium Sci-Fi Catch Game</title>
+  <meta name="description" content="Cosmic Cargo: Starfall — A premium browser game. Catch falling cargo, dodge bombs, unlock karts and survive 10 thrilling levels.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -44,8 +45,9 @@
         <div class="hud-box lives-box">
           <span id="heartsContainer">❤️❤️❤️</span>
         </div>
-        <button id="pauseBtn" class="hud-btn">⏸</button>
-        <button id="muteBtn" class="hud-btn">🔊</button>
+        <button id="pauseBtn" class="hud-btn" title="Pause">⏸</button>
+        <button id="muteBtn" class="hud-btn" title="Toggle Sound">🔊</button>
+        <button id="settingsGameBtn" class="hud-btn" title="Settings">⚙</button>
       </div>
 
       <!-- Stacked active powerups (below center HUD) -->
@@ -79,6 +81,7 @@
       <div class="menu-btn-group">
         <button class="btn" id="playBtn">▶ ENTER CARGO BAY</button>
         <button class="btn secondary" id="howToPlayBtn">💡 HOW TO PLAY</button>
+        <button class="btn secondary" id="settingsOpenBtn">⚙ SETTINGS</button>
       </div>
     </div>
 
@@ -87,7 +90,7 @@
       <div class="modal-card">
         <h2>MISSION BRIEFING</h2>
         <div class="modal-body">
-          <p><strong>OBJECTIVE:</strong> Capture falling cargo crates to reach level gates. Game ends if you lose all 3 hearts.</p>
+          <p><strong>OBJECTIVE:</strong> Capture falling cargo crates to reach level gates. Game ends if you lose all hearts.</p>
           
           <div class="legend-compact">
             <div class="legend-item"><span class="swatch" style="background:#ffd34d;"></span> Wood Crate (+10 Score)</div>
@@ -99,7 +102,7 @@
             <div class="legend-item"><span class="swatch" style="background:#2effa3;"></span> Deflector Shield (Absorbs 1 bomb)</div>
           </div>
           
-          <p><strong>CONTROLS:</strong> Move cursor/pointer or swipe screen to track the cargo cart beneath crates. You can also tap crates directly to smash them in emergencies.</p>
+          <p><strong>CONTROLS:</strong> Move cursor/pointer or swipe screen to track the cargo cart beneath crates. Tap crates directly to smash them in emergencies.</p>
         </div>
         <button class="btn" id="closeHowToBtn">UNDERSTOOD</button>
       </div>
@@ -183,6 +186,80 @@
         <button class="btn secondary" id="exitToMenuBtn">🏠 MAIN MENU</button>
       </div>
     </div>
+
+    <!-- ── Settings Backdrop ─────────────────────────────────────── -->
+    <div id="settingsBackdrop" class="settings-backdrop"></div>
+
+    <!-- ── Settings Side Panel ──────────────────────────────────── -->
+    <div id="settingsPanel" class="settings-panel">
+      <div class="settings-header">
+        <span class="settings-title">⚙ SETTINGS</span>
+        <button id="closeSettingsBtn" class="settings-close-btn" title="Close">✕</button>
+      </div>
+
+      <div class="settings-body">
+
+        <!-- AUDIO ─────────── -->
+        <div class="settings-section">
+          <div class="section-label">🎵 AUDIO</div>
+          <div class="settings-row">
+            <div class="row-info">
+              <span class="row-title">Sound Effects</span>
+              <span class="row-sub">Game audio &amp; UI sounds</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="soundToggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <div class="row-info">
+              <span class="row-title">Vibration</span>
+              <span class="row-sub">Haptic feedback on events</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="vibrationToggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- DIFFICULTY ─────── -->
+        <div class="settings-section">
+          <div class="section-label">⚔ DIFFICULTY</div>
+          <div class="diff-tabs">
+            <button class="diff-tab" data-diff="easy">🌱 Easy</button>
+            <button class="diff-tab active" data-diff="medium">⚡ Medium</button>
+            <button class="diff-tab" data-diff="hard">💀 Hard</button>
+          </div>
+          <div class="diff-info-box">
+            <span id="diffDesc">Balanced challenge — the standard Cosmic Cargo experience.</span>
+          </div>
+        </div>
+
+        <!-- THEME ─────────── -->
+        <div class="settings-section">
+          <div class="section-label">🎨 BACKGROUND THEME</div>
+          <div class="theme-grid" id="themeGrid">
+            <!-- built dynamically by JS -->
+          </div>
+        </div>
+
+        <!-- GAME DATA ─────── -->
+        <div class="settings-section">
+          <div class="section-label">📊 GAME DATA</div>
+          <div class="settings-row">
+            <div class="row-info">
+              <span class="row-title">Best Score</span>
+              <span class="row-sub" id="settingsHighScore">—</span>
+            </div>
+          </div>
+          <button class="reset-scores-btn" id="resetScoreBtn">🗑 Reset High Score</button>
+        </div>
+
+      </div>
+    </div>
+
   </div>
 
   <script src="game.js" type="module"></script>
